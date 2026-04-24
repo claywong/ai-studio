@@ -330,23 +330,23 @@ async function submit() {
 
         <div class="field">
           <label>参考图片（可选，1-3张）</label>
-          <label class="upload-box" :class="{ 'has-files': referenceImages.length > 0 }">
-            <input type="file" accept="image/jpeg,image/png,image/webp" multiple @change="handleReferenceChange">
-            <template v-if="referenceImages.length === 0">
-              <span class="upload-icon">▧</span>
-              <span><strong>点击或拖拽图片到这里</strong> JPEG, PNG, WebP · 每张最大5MB · 最多3张</span>
-            </template>
-            <template v-else>
-              <span class="upload-icon">✓</span>
-              <span><strong>已选择 {{ referenceImages.length }} 张参考图</strong> 点击可重新选择，最多3张</span>
-            </template>
-          </label>
-          <div v-if="referenceImages.length > 0" class="reference-preview-grid">
-            <div v-for="(file, index) in referenceImages" :key="`${file.name}-${index}`" class="reference-preview-card">
+          <div class="reference-upload-box" :class="{ 'has-files': referenceImages.length > 0 }">
+            <div
+              v-for="(file, index) in referenceImages"
+              :key="`${file.name}-${index}`"
+              class="reference-upload-card"
+              :title="file.name"
+            >
               <img :src="referenceImagePreviews[index]" :alt="file.name">
               <button type="button" aria-label="移除参考图" @click="removeReferenceImage(index)">×</button>
-              <span>{{ file.name }}</span>
             </div>
+
+            <label v-if="referenceImages.length < MAX_REFERENCE_IMAGES" class="reference-add-card">
+              <input type="file" accept="image/jpeg,image/png,image/webp" multiple @change="handleReferenceChange">
+              <span class="upload-icon">▧</span>
+              <strong>{{ referenceImages.length === 0 ? '点击或拖拽图片到这里' : '继续添加参考图' }}</strong>
+              <small>JPEG, PNG, WebP · 每张最大5MB · 最多3张</small>
+            </label>
           </div>
           <div class="counter">{{ referenceImages.length }} / 3 张图片</div>
         </div>

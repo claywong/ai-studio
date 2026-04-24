@@ -15,6 +15,8 @@ const aspectRatios = [
 const sizeLabels = ['1K', '2K']
 const models = ['gpt-image-2']
 const HISTORY_STORAGE_KEY = 'g7e6_ai_studio_image_history'
+const HISTORY_DB_NAME = 'g7e6_ai_studio'
+const HISTORY_DB_STORE = 'image_history'
 const MAX_HISTORY_ITEMS = 30
 const MAX_REFERENCE_IMAGES = 3
 
@@ -140,22 +142,106 @@ function openKeysPage() {
   window.open('https://g7e6ai.com/keys', '_blank', 'noopener,noreferrer')
 }
 
-function loadHistory() {
+function openHistoryDb() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(HISTORY_DB_NAME, 1)
+
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(HISTORY_DB_STORE)) {
+        db.createObjectStore(HISTORY_DB_STORE, { keyPath: 'id' })
+      }
+    }
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function readHistoryFromDb() {
+  const db = await openHistoryDb()
+  return new Promise<HistoryItem[]>((resolve, reject) => {
+    const transaction = db.transaction(HISTORY_DB_STORE, 'readonly')
+    const store = transaction.objectStore(HISTORY_DB_STORE)
+    const request = store.getAll()
+
+    request.onsuccess = () => resolve(request.result as HistoryItem[])
+    request.onerror = () => reject(request.error)
+    transaction.oncomplete = () => db.close()
+    transaction.onerror = () => reject(transaction.error)
+  })
+}
+
+async function writeHistoryToDb(items: HistoryItem[]) {
+  const db = await openHistoryDb()
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(HISTORY_DB_STORE, 'readwrite')
+    const store = transaction.objectStore(HISTORY_DB_STORE)
+    store.clear()
+    for (const item of items.slice(0, MAX_HISTORY_ITEMS)) {
+      store.put(item)
+    }
+
+    transaction.oncomplete = () => {
+      db.close()
+      resolve()
+    }
+    transaction.onerror = () => {
+      db.close()
+      reject(transaction.error)
+    }
+  })
+}
+
+async function clearHistoryDb() {
+  const db = await openHistoryDb()
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(HISTORY_DB_STORE, 'readwrite')
+    transaction.objectStore(HISTORY_DB_STORE).clear()
+
+    transaction.oncomplete = () => {
+      db.close()
+      resolve()
+    }
+    transaction.onerror = () => {
+      db.close()
+      reject(transaction.error)
+    }
+  })
+}
+
+async function loadHistory() {
   try {
+    const dbHistory = await readHistoryFromDb()
+    if (dbHistory.length > 0) {
+      historyItems.value = dbHistory
+        .filter(item => item?.id && item?.image)
+        .sort((first, second) => Date.parse(second.createdAt) - Date.parse(first.createdAt))
+        .slice(0, MAX_HISTORY_ITEMS)
+      return
+    }
+
     const rawHistory = localStorage.getItem(HISTORY_STORAGE_KEY)
     if (!rawHistory) return
 
     const parsed = JSON.parse(rawHistory) as HistoryItem[]
     if (Array.isArray(parsed)) {
       historyItems.value = parsed.filter(item => item?.id && item?.image).slice(0, MAX_HISTORY_ITEMS)
+      await persistHistory()
+      localStorage.removeItem(HISTORY_STORAGE_KEY)
     }
   } catch {
     historyItems.value = []
   }
 }
 
-function persistHistory() {
-  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(historyItems.value.slice(0, MAX_HISTORY_ITEMS)))
+async function persistHistory() {
+  try {
+    await writeHistoryToDb(historyItems.value)
+    localStorage.removeItem(HISTORY_STORAGE_KEY)
+  } catch {
+    historyItems.value = historyItems.value.slice(0, 1)
+  }
 }
 
 function addHistoryItem(image: string, size: string, revised?: string) {
@@ -170,7 +256,7 @@ function addHistoryItem(image: string, size: string, revised?: string) {
     revisedPrompt: revised,
   }
   historyItems.value = [item, ...historyItems.value].slice(0, MAX_HISTORY_ITEMS)
-  persistHistory()
+  void persistHistory()
 }
 
 function selectHistoryItem(item: HistoryItem) {
@@ -185,6 +271,7 @@ function selectHistoryItem(item: HistoryItem) {
 function clearHistory() {
   historyItems.value = []
   localStorage.removeItem(HISTORY_STORAGE_KEY)
+  void clearHistoryDb()
 }
 
 function formatHistoryTime(value: string) {

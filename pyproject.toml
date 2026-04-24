@@ -1,0 +1,24 @@
+[project]
+name = "g7e6-ai-studio-api"
+version = "0.1.0"
+description = "G7E6 AI Studio backend"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "httpx[socks]>=0.27.0",
+  "pydantic-settings>=2.4.0",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.6.0",
+  "pytest>=8.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

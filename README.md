@@ -1,6 +1,6 @@
 # G7E6 AI Studio
 
-G7E6 AI Studio 是部署在 `G7e6ai.com/studio` 下的 sub2api 扩展站点。当前 MVP 提供 `gpt-image-2` 文生图页面，并复用 sub2api 的登录状态。
+G7E6 AI Studio 是部署在 `G7e6ai.com/app/ai` 下的 sub2api 扩展站点。当前 MVP 提供 `gpt-image-2` 文生图页面，并复用 sub2api 的登录状态。
 
 ## 技术栈
 
@@ -38,7 +38,7 @@ localStorage.getItem('auth_token')
 ```
 
 3. 复制返回的 token。
-4. 打开本地 `http://127.0.0.1:5173/studio/`。
+4. 打开本地 `http://127.0.0.1:5173/app/ai/images`。
 5. 页面顶部会出现“开发登录”面板，粘贴 token 并保存。
 
 保存后，本地前端会把 token 放到 `Authorization` 请求头；本地 FastAPI 后端会调用 `SUB2API_BASE_URL/auth/me` 校验登录状态。
@@ -64,7 +64,7 @@ npm run dev
 开发访问：
 
 ```text
-http://127.0.0.1:5173/studio/
+http://127.0.0.1:5173/app/ai/images
 ```
 
 ## 生产部署
@@ -78,12 +78,12 @@ npm run build
 Nginx 示例：
 
 ```nginx
-location /studio/ {
+location /app/ai/ {
   alias /var/www/g7e6-ai-studio/dist/;
-  try_files $uri $uri/ /studio/index.html;
+  try_files $uri $uri/ /app/ai/index.html;
 }
 
-location /studio-api/ {
+location /app/ai-api/ {
   proxy_pass http://127.0.0.1:18081/;
   proxy_set_header Host $host;
   proxy_set_header Authorization $http_authorization;
@@ -105,7 +105,7 @@ location /studio-api/ {
 
 ## 参考图说明
 
-- 不上传参考图时，前端调用 `POST /studio-api/images/generations`，后端转发到 `IMAGE_API_URL`。
-- 上传 1-3 张参考图时，前端调用 `POST /studio-api/images/edits`，后端用 multipart/form-data 转发到 `IMAGE_EDIT_API_URL`。
+- 不上传参考图时，前端调用 `POST /app/ai-api/images/generations`，后端转发到 `IMAGE_API_URL`。
+- 上传 1-3 张参考图时，前端调用 `POST /app/ai-api/images/edits`，后端用 multipart/form-data 转发到 `IMAGE_EDIT_API_URL`。
 - 默认图片字段名是 `image[]`；如果上游网关不兼容，后端会自动 fallback 为重复的 `image` 字段。
 - 支持 `JPEG`、`PNG`、`WebP`，单张最大 5MB。

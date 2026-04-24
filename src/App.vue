@@ -51,7 +51,7 @@ const referenceImagePreviews = ref<string[]>([])
 const devToken = ref(localStorage.getItem('auth_token') ?? '')
 const showDevTokenPanel = import.meta.env.DEV
 const isAuthReady = ref(import.meta.env.DEV)
-const loginUrl = `/login?redirect=${encodeURIComponent('/studio/')}`
+const loginUrl = `/login?redirect=${encodeURIComponent('/app/ai/images')}`
 
 function redirectToLogin() {
   window.location.href = loginUrl

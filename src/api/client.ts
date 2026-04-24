@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 export const api = axios.create({
-  baseURL: '/studio-api',
+  baseURL: '/app/ai-api',
   timeout: 130000,
 })
 

@@ -61,8 +61,10 @@ function selectUser(u: UserOption) {
   void loadTrend()
 }
 
+function onFocus() { if (userOptions.value.length) showDropdown.value = true }
+function hideDropdown() { setTimeout(() => { showDropdown.value = false }, 150) }
+
 function clearUser() {
-  selectedUser.value = null
   searchQuery.value = ''
   trendItems.value = []
 }
@@ -185,8 +187,8 @@ const chartOption = computed(() => {
           class="search-input"
           placeholder="搜索用户（邮箱/姓名）"
           @input="onSearchInput"
-          @blur="setTimeout(() => showDropdown = false, 150)"
-          @focus="if (userOptions.length) showDropdown = true"
+          @blur="hideDropdown"
+          @focus="onFocus"
         />
         <button v-if="selectedUser" class="clear-btn" @click="clearUser">×</button>
         <div v-if="showDropdown && userOptions.length" class="dropdown">

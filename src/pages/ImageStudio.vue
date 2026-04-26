@@ -389,7 +389,7 @@ async function submit() {
         <p class="eyebrow">G7E6 AI Studio</p>
         <h1>图片生成工作台</h1>
       </div>
-      <a class="back-link" href="/">返回主站</a>
+
     </header>
 
     <section v-if="showDevTokenPanel" class="dev-token-panel">

@@ -265,7 +265,7 @@ function fmtDate(s: string | null) {
         <button class="refresh-button" type="button" :disabled="loading" @click="loadAll">
           {{ loading ? '刷新中' : '刷新' }}
         </button>
-        <a class="back-link" href="/">返回主站</a>
+
       </div>
     </header>
 
@@ -482,8 +482,7 @@ function fmtDate(s: string | null) {
   white-space: nowrap;
 }
 
-.refresh-button,
-.back-link {
+.refresh-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -508,17 +507,6 @@ function fmtDate(s: string | null) {
   border-color: #cbd5e1;
   color: #64748b;
   background: #f1f5f9;
-}
-
-.back-link {
-  border: 1px solid #d7deea;
-  color: #334155;
-  background: #ffffff;
-}
-
-.back-link:hover {
-  border-color: #b7c3d7;
-  color: #0f172a;
 }
 
 .reports-body {

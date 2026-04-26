@@ -263,12 +263,13 @@ async def get_user_daily_trend(
                 return {
                     "date": ds,
                     "actual_cost": user_data["actual_cost"],
+                    "account_cost": user_data.get("account_cost", 0.0),
                     "requests": user_data["requests"],
                     "total_tokens": user_data["total_tokens"],
                 }
         except Exception:
             pass
-        return {"date": ds, "actual_cost": 0.0, "requests": 0, "total_tokens": 0}
+        return {"date": ds, "actual_cost": 0.0, "account_cost": 0.0, "requests": 0, "total_tokens": 0}
 
     async with httpx.AsyncClient(timeout=20) as client:
         results = await asyncio.gather(*[fetch_day(client, d) for d in days])

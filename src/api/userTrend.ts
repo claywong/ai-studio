@@ -9,6 +9,7 @@ export interface UserOption {
 export interface DailyTrendItem {
   date: string
   actual_cost: number
+  account_cost: number
   requests: number
   total_tokens: number
 }

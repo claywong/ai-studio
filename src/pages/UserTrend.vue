@@ -122,14 +122,14 @@ const chartOption = computed(() => {
         const tok = n >= 1e9 ? `${(n/1e9).toFixed(2)}B` : n >= 1e6 ? `${(n/1e6).toFixed(1)}M` : `${(n/1e3).toFixed(1)}K`
         return [
           `<b>${item.date}</b>`,
-          `实际费用：$${item.actual_cost.toFixed(4)}`,
-          `账户成本：$${item.account_cost.toFixed(4)}`,
+          `费用：$${item.actual_cost.toFixed(4)}`,
+          `成本：$${item.account_cost.toFixed(4)}`,
           `请求：${item.requests.toLocaleString()}`,
           `Token：${tok}`,
         ].join('<br/>')
       },
     },
-    legend: { data: ['实际费用($)', '账户成本($)', '请求数'], textStyle: { color: '#64748b' }, bottom: 0 },
+    legend: { data: ['费用($)', '成本($)', '请求数'], textStyle: { color: '#64748b' }, bottom: 0 },
     grid: { left: 64, right: 64, top: 20, bottom: 48 },
     xAxis: {
       type: 'category',
@@ -156,7 +156,7 @@ const chartOption = computed(() => {
     ],
     series: [
       {
-        name: '实际费用($)',
+        name: '费用($)',
         type: 'bar',
         yAxisIndex: 0,
         data: items.map(i => i.actual_cost),
@@ -164,7 +164,7 @@ const chartOption = computed(() => {
         barMaxWidth: 24,
       },
       {
-        name: '账户成本($)',
+        name: '成本($)',
         type: 'bar',
         yAxisIndex: 0,
         data: items.map(i => i.account_cost),
@@ -244,11 +244,11 @@ const chartOption = computed(() => {
         <div class="stat-cards">
           <div class="stat-card">
             <div class="stat-val">${{ totalCost }}</div>
-            <div class="stat-label">实际费用</div>
+            <div class="stat-label">费用</div>
           </div>
           <div class="stat-card">
             <div class="stat-val">${{ totalAccountCost }}</div>
-            <div class="stat-label">账户成本</div>
+            <div class="stat-label">成本</div>
           </div>
           <div class="stat-card">
             <div class="stat-val">{{ totalRequests }}</div>
@@ -272,7 +272,7 @@ const chartOption = computed(() => {
           <div class="card-title">每日明细</div>
           <table class="detail-table">
             <thead>
-              <tr><th>日期</th><th>实际费用($)</th><th>账户成本($)</th><th>请求数</th><th>Token</th></tr>
+              <tr><th>日期</th><th>费用($)</th><th>成本($)</th><th>请求数</th><th>Token</th></tr>
             </thead>
             <tbody>
               <tr v-for="item in [...trendItems].reverse()" :key="item.date">

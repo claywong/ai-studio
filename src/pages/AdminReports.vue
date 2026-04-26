@@ -6,8 +6,8 @@ import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import { computed, onMounted, ref } from 'vue'
 import {
-  fetchAccounts, fetchModels, fetchOverview, fetchTrend,
-  type AccountGroup, type DateRange, type ModelItem, type OverviewData, type TrendData,
+  fetchAccounts, fetchModels, fetchOverview, fetchTrend, fetchUserBreakdown,
+  type AccountGroup, type DateRange, type ModelItem, type OverviewData, type TrendData, type UserBreakdownItem,
 } from '../api/adminReports'
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
@@ -63,6 +63,7 @@ const trendData     = ref<TrendData | null>(null)
 const modelsData    = ref<ModelItem[]>([])
 const accountGroups = ref<AccountGroup[]>([])
 const expandedGroups = ref<Set<string>>(new Set())
+const userBreakdown = ref<UserBreakdownItem[]>([])
 const lastUpdatedAt = ref('')
 
 function toggleGroup(name: string) {
@@ -83,16 +84,18 @@ async function loadAll() {
   loading.value = true
   error.value = ''
   try {
-    const [ov, tr, md, ac] = await Promise.all([
+    const [ov, tr, md, ac, ub] = await Promise.all([
       fetchOverview(range.value),
       fetchTrend(range.value),
       fetchModels(range.value),
       fetchAccounts(range.value),
+      fetchUserBreakdown(range.value),
     ])
     overview.value      = ov
     trendData.value     = tr
     modelsData.value    = md.models ?? []
     accountGroups.value = ac
+    userBreakdown.value = (ub?.users ?? []).sort((a, b) => b.actual_cost - a.actual_cost)
     lastUpdatedAt.value = new Date().toISOString()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } }; message?: string }
@@ -414,6 +417,39 @@ function fmtDate(s: string | null) {
                     </tr>
                   </template>
                 </template>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="section-card table-section">
+          <div class="section-heading">
+            <div>
+              <h2>用户使用情况</h2>
+              <span>{{ userBreakdown.length }} 个用户 · {{ periodLabel }}</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-name">用户</th>
+                  <th class="col-num">请求数</th>
+                  <th class="col-num">总 Token</th>
+                  <th class="col-num">费用($)</th>
+                  <th class="col-num">成本($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!userBreakdown.length">
+                  <td colspan="5"><div class="empty-table">暂无数据</div></td>
+                </tr>
+                <tr v-for="u in userBreakdown" :key="u.user_id">
+                  <td class="col-name">{{ u.email }}</td>
+                  <td class="col-num">{{ u.requests.toLocaleString() }}</td>
+                  <td class="col-num">{{ fmt(u.total_tokens) }}</td>
+                  <td class="col-num cost">${{ u.actual_cost.toFixed(2) }}</td>
+                  <td class="col-num muted">${{ u.account_cost.toFixed(2) }}</td>
+                </tr>
               </tbody>
             </table>
           </div>

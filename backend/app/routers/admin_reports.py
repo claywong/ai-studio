@@ -277,6 +277,21 @@ async def get_user_daily_trend(
     return {"items": list(results)}
 
 
+@router.get("/user-breakdown")
+async def get_user_breakdown(
+    _: Annotated[dict, Depends(require_admin)],
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    timezone: str = Query("Asia/Shanghai"),
+):
+    start, end = _parse_dates(start_date, end_date)
+    data = await _admin_get_simple(
+        "/admin/dashboard/user-breakdown",
+        {"start_date": str(start), "end_date": str(end), "timezone": timezone},
+    )
+    return data
+
+
 @router.get("/users/{user_id}/usage-logs")
 async def get_user_usage_logs(
     user_id: int,

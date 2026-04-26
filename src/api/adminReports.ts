@@ -99,3 +99,17 @@ export async function fetchAccounts(range: DateRange): Promise<AccountGroup[]> {
   const res = await api.get<AccountGroup[]>('/admin/reports/accounts', { params: rangeParams(range) })
   return res.data
 }
+
+export interface UserBreakdownItem {
+  user_id: number
+  email: string
+  requests: number
+  total_tokens: number
+  actual_cost: number
+  account_cost: number
+}
+
+export async function fetchUserBreakdown(range: DateRange): Promise<{ users: UserBreakdownItem[] }> {
+  const res = await api.get<{ users: UserBreakdownItem[] }>('/admin/reports/user-breakdown', { params: rangeParams(range) })
+  return res.data
+}

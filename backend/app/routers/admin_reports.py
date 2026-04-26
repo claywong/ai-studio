@@ -1,0 +1,197 @@
+from datetime import date, timedelta
+from typing import Annotated, Any
+import json
+
+import asyncpg
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.core.auth import require_admin
+from app.core.config import get_settings
+
+router = APIRouter(prefix="/admin/reports", tags=["admin-reports"])
+
+
+async def _admin_get(path: str, params: dict | None = None) -> Any:
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(
+                f"{settings.sub2api_base_url.rstrip('/')}/{path.lstrip('/')}",
+                headers={"x-api-key": settings.sub2api_admin_api_key},
+                params=params,
+            )
+        response.raise_for_status()
+        return response.json().get("data")
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+def _days(start: date, end: date) -> int:
+    return max(1, (end - start).days + 1)
+
+
+def _sub2api_period(start: date, end: date) -> str:
+    """sub2api 只支持 week/month，按区间长度映射。"""
+    return "week" if _days(start, end) <= 7 else "month"
+
+
+def _default_range() -> tuple[date, date]:
+    end = date.today()
+    start = end - timedelta(days=29)
+    return start, end
+
+
+def _parse_dates(
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[date, date]:
+    end = date.fromisoformat(end_date) if end_date else date.today()
+    start = date.fromisoformat(start_date) if start_date else end - timedelta(days=29)
+    if start > end:
+        start, end = end, start
+    return start, end
+
+
+@router.get("/overview")
+async def get_overview(
+    _: Annotated[dict, Depends(require_admin)],
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+):
+    start, end = _parse_dates(start_date, end_date)
+    days = _days(start, end)
+    settings = get_settings()
+    data = await _admin_get("/admin/dashboard/stats")
+
+    try:
+        conn = await asyncpg.connect(settings.database_url)
+        try:
+            row = await conn.fetchrow(
+                """SELECT COUNT(DISTINCT user_id) AS cnt FROM usage_logs
+                   WHERE created_at >= $1::date AND created_at < $2::date + interval '1 day'""",
+                start, end,
+            )
+            data["period_active_users"] = row["cnt"]
+            data["period_days"] = days
+        finally:
+            await conn.close()
+    except Exception:
+        data["period_active_users"] = None
+        data["period_days"] = days
+
+    return data
+
+
+@router.get("/trend")
+async def get_trend(
+    _: Annotated[dict, Depends(require_admin)],
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    timezone: str = Query("Asia/Shanghai"),
+):
+    start, end = _parse_dates(start_date, end_date)
+    period = _sub2api_period(start, end)
+    data = await _admin_get("/admin/dashboard/trend", {"period": period, "timezone": timezone})
+
+    # 过滤到选定区间
+    if data and "trend" in data:
+        data["trend"] = [
+            item for item in data["trend"]
+            if str(start) <= item["date"] <= str(end)
+        ]
+
+    return data
+
+
+@router.get("/models")
+async def get_models(
+    _: Annotated[dict, Depends(require_admin)],
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    timezone: str = Query("Asia/Shanghai"),
+):
+    start, end = _parse_dates(start_date, end_date)
+    period = _sub2api_period(start, end)
+    data = await _admin_get("/admin/dashboard/models", {"period": period, "timezone": timezone})
+    return data
+
+
+@router.get("/accounts")
+async def get_accounts(
+    _: Annotated[dict, Depends(require_admin)],
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+):
+    start, end = _parse_dates(start_date, end_date)
+    settings = get_settings()
+    sql = """
+        WITH stats AS (
+            SELECT
+                a.id,
+                a.name,
+                a.platform,
+                a.status,
+                a.last_used_at,
+                a.expires_at,
+                REGEXP_REPLACE(a.name, '[-_].*$', '') AS grp,
+                COUNT(ul.id)                            AS requests,
+                COALESCE(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0)), 0) AS total_cost,
+                COALESCE(SUM(ul.input_tokens), 0)       AS input_tokens,
+                COALESCE(SUM(ul.output_tokens), 0)      AS output_tokens
+            FROM accounts a
+            LEFT JOIN usage_logs ul
+                   ON ul.account_id = a.id
+                  AND ul.created_at >= $1
+                  AND ul.created_at < $2::date + interval '1 day'
+            WHERE a.deleted_at IS NULL
+            GROUP BY a.id, a.name, a.platform, a.status, a.last_used_at, a.expires_at
+        )
+        SELECT
+            grp                                  AS group_name,
+            COUNT(*)                             AS account_count,
+            SUM(requests)                        AS total_requests,
+            ROUND(SUM(total_cost)::numeric, 4)   AS total_cost,
+            SUM(input_tokens)                    AS input_tokens,
+            SUM(output_tokens)                   AS output_tokens,
+            MAX(last_used_at)                    AS last_used_at,
+            JSON_AGG(
+                JSON_BUILD_OBJECT(
+                    'id',          id,
+                    'name',        name,
+                    'platform',    platform,
+                    'status',      status,
+                    'requests',    requests,
+                    'total_cost',  ROUND(total_cost::numeric, 4),
+                    'last_used_at', last_used_at,
+                    'expires_at',  expires_at
+                ) ORDER BY requests DESC
+            ) AS accounts
+        FROM stats
+        GROUP BY grp
+        ORDER BY total_requests DESC
+    """
+    try:
+        conn = await asyncpg.connect(settings.database_url)
+        try:
+            rows = await conn.fetch(sql, start, end)
+        finally:
+            await conn.close()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    result = []
+    for row in rows:
+        accounts_raw = row["accounts"]
+        accounts = json.loads(accounts_raw) if isinstance(accounts_raw, str) else accounts_raw
+        result.append({
+            "group_name": row["group_name"],
+            "account_count": row["account_count"],
+            "total_requests": row["total_requests"],
+            "total_cost": float(row["total_cost"]),
+            "input_tokens": row["input_tokens"],
+            "output_tokens": row["output_tokens"],
+            "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
+            "accounts": accounts,
+        })
+    return result

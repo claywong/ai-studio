@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     image_edit_field_name: str = "image[]"
     image_api_key: str = ""
     request_timeout_seconds: float = 360.0
+    dawclaudecode_webhook_secret: str = ""
+    sub2api_admin_api_key: str = ""
+    database_url: str = ""
 
 
 @lru_cache

@@ -82,17 +82,23 @@ const historyChartOption = computed(() => {
   const items = history.value
   if (!items.length) return {}
 
-  const times = items.map(i => fmtTime(i.checked_at))
-  const latencies = items.map(i => i.latency_ms ?? null)
-  const pingLatencies = items.map(i => i.ping_latency_ms ?? null)
+  const itemMap = new Map(items.map(i => [new Date(i.checked_at).getTime(), i]))
 
-  // 故障点散点
+  const latencyData = items
+    .filter(i => i.latency_ms != null)
+    .map(i => [new Date(i.checked_at).getTime(), i.latency_ms])
+
+  const pingData = items
+    .filter(i => i.ping_latency_ms != null)
+    .map(i => [new Date(i.checked_at).getTime(), i.ping_latency_ms])
+
   const errorPoints = items
-    .map((i, idx) => i.status === 'error' ? [idx, i.latency_ms ?? 0] : null)
-    .filter(Boolean)
+    .filter(i => i.status === 'error')
+    .map(i => [new Date(i.checked_at).getTime(), i.latency_ms ?? 0])
+
   const degradedPoints = items
-    .map((i, idx) => i.status === 'degraded' ? [idx, i.latency_ms ?? 0] : null)
-    .filter(Boolean)
+    .filter(i => i.status === 'degraded')
+    .map(i => [new Date(i.checked_at).getTime(), i.latency_ms ?? 0])
 
   return {
     backgroundColor: 'transparent',
@@ -102,10 +108,12 @@ const historyChartOption = computed(() => {
       backgroundColor: '#ffffff',
       borderColor: '#e2e8f0',
       textStyle: { color: '#0f172a', fontSize: 12 },
-      formatter: (params: { dataIndex: number; seriesName: string; value: number | null }[]) => {
-        const idx = params[0]?.dataIndex ?? 0
-        const item = items[idx]
-        if (!item) return ''
+      formatter: (params: { value: [number, number] }[]) => {
+        const ts = params[0]?.value[0]
+        if (!ts) return ''
+        const item = itemMap.get(ts) ?? items.reduce((a, b) =>
+          Math.abs(new Date(a.checked_at).getTime() - ts) < Math.abs(new Date(b.checked_at).getTime() - ts) ? a : b,
+        )
         const lines = [
           `<div style="font-weight:600;margin-bottom:4px">${fmtTime(item.checked_at)}</div>`,
           `状态：<span style="color:${statusColor(item.status)};font-weight:600">${statusLabel(item.status)}</span>`,
@@ -123,13 +131,15 @@ const historyChartOption = computed(() => {
     },
     grid: { left: 60, right: 20, top: 20, bottom: 48 },
     xAxis: {
-      type: 'category',
-      data: times,
+      type: 'time',
       axisLabel: {
         color: '#94a3b8',
         fontSize: 10,
-        interval: Math.floor(items.length / 10),
         rotate: 30,
+        formatter: (value: number) => {
+          const d = new Date(value)
+          return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+        },
       },
       axisLine: { lineStyle: { color: '#e2e8f0' } },
       axisTick: { show: false },
@@ -145,7 +155,7 @@ const historyChartOption = computed(() => {
       {
         name: '响应延迟',
         type: 'line',
-        data: latencies,
+        data: latencyData,
         smooth: true,
         symbol: 'none',
         lineStyle: { color: '#2563eb', width: 2 },
@@ -154,7 +164,7 @@ const historyChartOption = computed(() => {
       {
         name: 'Ping 延迟',
         type: 'line',
-        data: pingLatencies,
+        data: pingData,
         smooth: true,
         symbol: 'none',
         lineStyle: { color: '#0891b2', width: 1.5, type: 'dashed' },

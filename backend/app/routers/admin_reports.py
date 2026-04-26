@@ -161,10 +161,12 @@ async def get_accounts(
                     'name',        name,
                     'platform',    platform,
                     'status',      status,
-                    'requests',    requests,
-                    'total_cost',  ROUND(total_cost::numeric, 4),
-                    'last_used_at', last_used_at,
-                    'expires_at',  expires_at
+                    'requests',      requests,
+                    'total_cost',    ROUND(total_cost::numeric, 4),
+                    'input_tokens',  input_tokens,
+                    'output_tokens', output_tokens,
+                    'last_used_at',  last_used_at,
+                    'expires_at',    expires_at
                 ) ORDER BY requests DESC
             ) AS accounts
         FROM stats

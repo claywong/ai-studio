@@ -50,6 +50,8 @@ export interface AccountItem {
   status: string
   requests: number
   total_cost: number
+  input_tokens: number
+  output_tokens: number
   last_used_at: string | null
   expires_at: string | null
 }

@@ -333,8 +333,8 @@ function fmtDate(s: string | null) {
                     </td>
                     <td class="col-num dim">—</td>
                     <td class="col-num">{{ acc.requests.toLocaleString() }}</td>
-                    <td class="col-num dim">—</td>
-                    <td class="col-num dim">—</td>
+                    <td class="col-num dim">{{ fmt(acc.input_tokens) }}</td>
+                    <td class="col-num dim">{{ fmt(acc.output_tokens) }}</td>
                     <td class="col-num">${{ Number(acc.total_cost).toFixed(2) }}</td>
                     <td class="col-date dim">{{ fmtDate(acc.last_used_at) }}</td>
                   </tr>

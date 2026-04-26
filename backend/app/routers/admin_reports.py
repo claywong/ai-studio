@@ -129,23 +129,23 @@ async def get_accounts(
         WITH stats AS (
             SELECT
                 a.id,
-                a.name,
-                a.platform,
-                a.status,
+                COALESCE(a.name, '未知账号-' || ul.account_id::text)  AS name,
+                COALESCE(a.platform, '')                              AS platform,
+                COALESCE(a.status, 'deleted')                         AS status,
                 a.last_used_at,
                 a.expires_at,
-                REGEXP_REPLACE(a.name, '[-_].*$', '') AS grp,
-                COUNT(ul.id)                            AS requests,
+                COALESCE(REGEXP_REPLACE(a.name, '[-_].*$', ''), '已删除') AS grp,
+                COUNT(ul.id)                                           AS requests,
                 COALESCE(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0)), 0) AS total_cost,
-                COALESCE(SUM(ul.input_tokens), 0)       AS input_tokens,
-                COALESCE(SUM(ul.output_tokens), 0)      AS output_tokens
-            FROM accounts a
-            LEFT JOIN usage_logs ul
-                   ON ul.account_id = a.id
-                  AND ul.created_at >= $1
-                  AND ul.created_at < $2::date + interval '1 day'
-            WHERE a.deleted_at IS NULL
-            GROUP BY a.id, a.name, a.platform, a.status, a.last_used_at, a.expires_at
+                COALESCE(SUM(ul.input_tokens), 0)              AS input_tokens,
+                COALESCE(SUM(ul.output_tokens), 0)             AS output_tokens,
+                COALESCE(SUM(ul.cache_creation_tokens), 0)     AS cache_creation_tokens,
+                COALESCE(SUM(ul.cache_read_tokens), 0)         AS cache_read_tokens
+            FROM usage_logs ul
+            LEFT JOIN accounts a ON a.id = ul.account_id
+            WHERE ul.created_at >= $1
+              AND ul.created_at < $2::date + interval '1 day'
+            GROUP BY a.id, a.name, a.platform, a.status, a.last_used_at, a.expires_at, ul.account_id
         )
         SELECT
             grp                                  AS group_name,
@@ -154,6 +154,8 @@ async def get_accounts(
             ROUND(SUM(total_cost)::numeric, 4)   AS total_cost,
             SUM(input_tokens)                    AS input_tokens,
             SUM(output_tokens)                   AS output_tokens,
+            SUM(cache_creation_tokens)           AS cache_creation_tokens,
+            SUM(cache_read_tokens)               AS cache_read_tokens,
             MAX(last_used_at)                    AS last_used_at,
             JSON_AGG(
                 JSON_BUILD_OBJECT(
@@ -163,8 +165,10 @@ async def get_accounts(
                     'status',      status,
                     'requests',      requests,
                     'total_cost',    ROUND(total_cost::numeric, 4),
-                    'input_tokens',  input_tokens,
-                    'output_tokens', output_tokens,
+                    'input_tokens',            input_tokens,
+                    'output_tokens',           output_tokens,
+                    'cache_creation_tokens',   cache_creation_tokens,
+                    'cache_read_tokens',       cache_read_tokens,
                     'last_used_at',  last_used_at,
                     'expires_at',    expires_at
                 ) ORDER BY requests DESC
@@ -193,6 +197,8 @@ async def get_accounts(
             "total_cost": float(row["total_cost"]),
             "input_tokens": row["input_tokens"],
             "output_tokens": row["output_tokens"],
+            "cache_creation_tokens": row["cache_creation_tokens"],
+            "cache_read_tokens": row["cache_read_tokens"],
             "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
             "accounts": accounts,
         })

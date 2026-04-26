@@ -223,7 +223,7 @@ const totalRequests = computed(() =>
   accountGroups.value.reduce((s, g) => s + g.total_requests, 0).toLocaleString(),
 )
 const totalTokens = computed(() => {
-  const n = accountGroups.value.reduce((s, g) => s + g.input_tokens + g.output_tokens, 0)
+  const n = accountGroups.value.reduce((s, g) => s + g.input_tokens + g.output_tokens + (g.cache_creation_tokens ?? 0) + (g.cache_read_tokens ?? 0), 0)
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
   if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000)         return `${(n / 1_000).toFixed(1)}K`
@@ -360,15 +360,16 @@ function fmtDate(s: string | null) {
                   <th class="col-name">账号组</th>
                   <th class="col-num">账号数</th>
                   <th class="col-num">请求数</th>
-                  <th class="col-num">输入 Tokens</th>
-                  <th class="col-num">输出 Tokens</th>
+                  <th class="col-num">总 Tokens</th>
+                  <th class="col-num">输入 / 输出</th>
+                  <th class="col-num">缓存 创建 / 命中</th>
                   <th class="col-num">成本($)</th>
                   <th class="col-date">最后使用</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!hasAccountData">
-                  <td colspan="7">
+                  <td colspan="8">
                     <div class="empty-table">暂无账号分组数据</div>
                   </td>
                 </tr>
@@ -390,8 +391,9 @@ function fmtDate(s: string | null) {
                     </td>
                     <td class="col-num">{{ group.account_count }}</td>
                     <td class="col-num">{{ group.total_requests.toLocaleString() }}</td>
-                    <td class="col-num muted">{{ fmt(group.input_tokens) }}</td>
-                    <td class="col-num muted">{{ fmt(group.output_tokens) }}</td>
+                    <td class="col-num">{{ fmt(group.input_tokens + group.output_tokens + (group.cache_creation_tokens ?? 0) + (group.cache_read_tokens ?? 0)) }}</td>
+                    <td class="col-num muted">{{ fmt(group.input_tokens) }} / {{ fmt(group.output_tokens) }}</td>
+                    <td class="col-num muted">{{ fmt(group.cache_creation_tokens ?? 0) }} / {{ fmt(group.cache_read_tokens ?? 0) }}</td>
                     <td class="col-num cost">${{ group.total_cost.toFixed(2) }}</td>
                     <td class="col-date muted">{{ fmtDate(group.last_used_at) }}</td>
                   </tr>
@@ -404,8 +406,9 @@ function fmtDate(s: string | null) {
                       </td>
                       <td class="col-num muted">—</td>
                       <td class="col-num">{{ acc.requests.toLocaleString() }}</td>
-                      <td class="col-num muted">{{ fmt(acc.input_tokens) }}</td>
-                      <td class="col-num muted">{{ fmt(acc.output_tokens) }}</td>
+                      <td class="col-num">{{ fmt(acc.input_tokens + acc.output_tokens + (acc.cache_creation_tokens ?? 0) + (acc.cache_read_tokens ?? 0)) }}</td>
+                      <td class="col-num muted">{{ fmt(acc.input_tokens) }} / {{ fmt(acc.output_tokens) }}</td>
+                      <td class="col-num muted">{{ fmt(acc.cache_creation_tokens ?? 0) }} / {{ fmt(acc.cache_read_tokens ?? 0) }}</td>
                       <td class="col-num">${{ Number(acc.total_cost).toFixed(2) }}</td>
                       <td class="col-date muted">{{ fmtDate(acc.last_used_at) }}</td>
                     </tr>

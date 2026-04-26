@@ -52,6 +52,8 @@ export interface AccountItem {
   total_cost: number
   input_tokens: number
   output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   last_used_at: string | null
   expires_at: string | null
 }
@@ -63,6 +65,8 @@ export interface AccountGroup {
   total_cost: number
   input_tokens: number
   output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   last_used_at: string | null
   accounts: AccountItem[]
 }

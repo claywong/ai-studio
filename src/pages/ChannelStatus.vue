@@ -85,20 +85,20 @@ const historyChartOption = computed(() => {
   const itemMap = new Map(items.map(i => [new Date(i.checked_at).getTime(), i]))
 
   const latencyData = items
-    .filter(i => i.latency_ms != null)
+    .filter(i => i.latency_ms != null && i.latency_ms > 0)
     .map(i => [new Date(i.checked_at).getTime(), i.latency_ms])
 
   const pingData = items
-    .filter(i => i.ping_latency_ms != null)
+    .filter(i => i.ping_latency_ms != null && i.ping_latency_ms > 0)
     .map(i => [new Date(i.checked_at).getTime(), i.ping_latency_ms])
 
   const errorPoints = items
-    .filter(i => i.status === 'error')
-    .map(i => [new Date(i.checked_at).getTime(), i.latency_ms ?? 0])
+    .filter(i => i.status === 'error' && i.latency_ms != null && i.latency_ms > 0)
+    .map(i => [new Date(i.checked_at).getTime(), i.latency_ms])
 
   const degradedPoints = items
-    .filter(i => i.status === 'degraded')
-    .map(i => [new Date(i.checked_at).getTime(), i.latency_ms ?? 0])
+    .filter(i => i.status === 'degraded' && i.latency_ms != null && i.latency_ms > 0)
+    .map(i => [new Date(i.checked_at).getTime(), i.latency_ms])
 
   return {
     backgroundColor: 'transparent',

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import ImageStudio from '../pages/ImageStudio.vue'
 import AdminReports from '../pages/AdminReports.vue'
+import ChannelStatus from '../pages/ChannelStatus.vue'
 
 const router = createRouter({
   history: createWebHistory('/app/ai/'),
@@ -10,6 +11,11 @@ const router = createRouter({
     {
       path: '/admin/reports',
       component: AdminReports,
+      meta: { requiresAdmin: true },
+    },
+    {
+      path: '/admin/channel-status',
+      component: ChannelStatus,
       meta: { requiresAdmin: true },
     },
   ],

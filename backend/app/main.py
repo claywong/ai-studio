@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import admin_reports, auth, images, tokens
+from app.routers import admin_reports, auth, channel_monitors, images, tokens
 from app.webhooks import router as webhooks_router
 
 settings = get_settings()
@@ -28,3 +28,4 @@ app.include_router(images.router)
 app.include_router(tokens.router)
 app.include_router(webhooks_router)
 app.include_router(admin_reports.router)
+app.include_router(channel_monitors.router)

@@ -5,7 +5,7 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import { computed, ref, watch } from 'vue'
-import { searchUsers, fetchUserDailyTrend, type UserOption, type DailyTrendItem } from '../api/userTrend'
+import { searchUsers, fetchUserDailyTrend, fetchUserUsageLogs, type UserOption, type DailyTrendItem, type UsageLogItem } from '../api/userTrend'
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
 
@@ -29,7 +29,7 @@ function applyShortcut(s: typeof SHORTCUTS[0]) {
   startDate.value = s.start()
   endDate.value = s.end()
   activeShortcut.value = s.label
-  if (selectedUser.value) void loadTrend()
+  if (selectedUser.value) { void loadTrend(); void loadUsageLogs(1) }
 }
 
 // 用户搜索
@@ -59,6 +59,7 @@ function selectUser(u: UserOption) {
   searchQuery.value = u.email + (u.username ? ` (${u.username})` : '')
   showDropdown.value = false
   void loadTrend()
+  void loadUsageLogs(1)
 }
 
 function onFocus() { if (userOptions.value.length) showDropdown.value = true }
@@ -87,6 +88,52 @@ async function loadTrend() {
   } finally {
     trendLoading.value = false
   }
+}
+
+// 使用记录
+const usageLogs = ref<UsageLogItem[]>([])
+const usageLoading = ref(false)
+const usageError = ref('')
+const usagePage = ref(1)
+const usageTotal = ref(0)
+const usagePages = ref(0)
+
+async function loadUsageLogs(page = 1) {
+  if (!selectedUser.value) return
+  usageLoading.value = true
+  usageError.value = ''
+  usagePage.value = page
+  try {
+    const data = await fetchUserUsageLogs(selectedUser.value.id, page, startDate.value, endDate.value)
+    usageLogs.value = data.items ?? []
+    usageTotal.value = data.total ?? 0
+    usagePages.value = data.pages ?? 0
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } }; message?: string }
+    usageError.value = err.response?.data?.detail ?? err.message ?? '加载失败'
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+function fmtTime(iso: string) {
+  const d = new Date(iso)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  return `${mm}-${dd} ${hh}:${mi}:${ss}`
+}
+
+function fmtMs(ms: number) {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
+
+function fmtTokens(n: number) {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`
+  return String(n)
 }
 
 // 统计
@@ -227,9 +274,9 @@ const chartOption = computed(() => {
       </div>
 
       <div class="date-range">
-        <input type="date" v-model="startDate" class="date-input" @change="activeShortcut=''; if(selectedUser) loadTrend()" />
+        <input type="date" v-model="startDate" class="date-input" @change="activeShortcut=''; if(selectedUser) { loadTrend(); loadUsageLogs(1) }" />
         <span class="date-sep">~</span>
-        <input type="date" v-model="endDate" class="date-input" @change="activeShortcut=''; if(selectedUser) loadTrend()" />
+        <input type="date" v-model="endDate" class="date-input" @change="activeShortcut=''; if(selectedUser) { loadTrend(); loadUsageLogs(1) }" />
       </div>
     </div>
 
@@ -267,7 +314,7 @@ const chartOption = computed(() => {
           <div v-else class="center-msg sm">该时间段无数据</div>
         </div>
 
-        <!-- 明细表 -->
+        <!-- 每日明细表 -->
         <div class="chart-card">
           <div class="card-title">每日明细</div>
           <table class="detail-table">
@@ -289,6 +336,49 @@ const chartOption = computed(() => {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- 使用记录 -->
+        <div class="chart-card">
+          <div class="card-title-row">
+            <span class="card-title">使用记录</span>
+            <span v-if="usageTotal" class="usage-total">共 {{ usageTotal.toLocaleString() }} 条</span>
+          </div>
+          <div v-if="usageLoading" class="center-msg sm">加载中…</div>
+          <div v-else-if="usageError" class="center-msg sm error">{{ usageError }}</div>
+          <template v-else>
+            <table class="detail-table usage-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>模型</th>
+                  <th>输入</th>
+                  <th>输出</th>
+                  <th>缓存读</th>
+                  <th>费用($)</th>
+                  <th>成本($)</th>
+                  <th>时长</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="log in usageLogs" :key="log.id">
+                  <td class="mono">{{ fmtTime(log.created_at) }}</td>
+                  <td class="model-cell">{{ log.model }}</td>
+                  <td class="mono">{{ fmtTokens(log.input_tokens) }}</td>
+                  <td class="mono">{{ fmtTokens(log.output_tokens) }}</td>
+                  <td class="mono">{{ fmtTokens(log.cache_read_tokens) }}</td>
+                  <td class="mono">${{ log.actual_cost.toFixed(4) }}</td>
+                  <td class="mono">${{ log.total_cost.toFixed(4) }}</td>
+                  <td class="mono">{{ fmtMs(log.duration_ms) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="usagePages > 1" class="pagination">
+              <button class="page-btn" :disabled="usagePage <= 1" @click="loadUsageLogs(usagePage - 1)">‹</button>
+              <span class="page-info">{{ usagePage }} / {{ usagePages }}</span>
+              <button class="page-btn" :disabled="usagePage >= usagePages" @click="loadUsageLogs(usagePage + 1)">›</button>
+            </div>
+          </template>
         </div>
       </template>
     </template>
@@ -340,4 +430,16 @@ const chartOption = computed(() => {
 .detail-table td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
 .detail-table tr:last-child td { border-bottom: none; }
 .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+
+.card-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.card-title-row .card-title { margin-bottom: 0; }
+.usage-total { font-size: 12px; color: #94a3b8; }
+
+.usage-table .model-cell { font-size: 12px; color: #374151; max-width: 200px; word-break: break-all; }
+
+.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 16px; }
+.page-btn { width: 28px; height: 28px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; font-size: 16px; cursor: pointer; color: #374151; display: flex; align-items: center; justify-content: center; }
+.page-btn:disabled { color: #cbd5e1; cursor: not-allowed; }
+.page-btn:not(:disabled):hover { border-color: #94a3b8; }
+.page-info { font-size: 13px; color: #64748b; }
 </style>

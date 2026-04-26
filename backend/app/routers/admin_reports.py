@@ -275,3 +275,21 @@ async def get_user_daily_trend(
         results = await asyncio.gather(*[fetch_day(client, d) for d in days])
 
     return {"items": list(results)}
+
+
+@router.get("/users/{user_id}/usage-logs")
+async def get_user_usage_logs(
+    user_id: int,
+    _: Annotated[dict, Depends(require_admin)],
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+):
+    params: dict[str, Any] = {"user_id": user_id, "page": page, "per_page": per_page}
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    data = await _admin_get_simple("/admin/usage", params)
+    return data

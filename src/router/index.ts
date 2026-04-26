@@ -26,7 +26,7 @@ router.beforeEach((to) => {
 
   const rawUser = localStorage.getItem('auth_user')
   if (!rawUser) {
-    window.location.href = '/login?redirect=/app/ai/admin/reports'
+    window.location.href = `/login?redirect=/app/ai${to.path}`
     return false
   }
 

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import ImageStudio from '../pages/ImageStudio.vue'
 import AdminReports from '../pages/AdminReports.vue'
 import ChannelStatus from '../pages/ChannelStatus.vue'
+import UserTrend from '../pages/UserTrend.vue'
 
 const router = createRouter({
   history: createWebHistory('/app/ai/'),
@@ -16,6 +17,11 @@ const router = createRouter({
     {
       path: '/admin/channel-status',
       component: ChannelStatus,
+      meta: { requiresAdmin: true },
+    },
+    {
+      path: '/admin/user-trend',
+      component: UserTrend,
       meta: { requiresAdmin: true },
     },
   ],

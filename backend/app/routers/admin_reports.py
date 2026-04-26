@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from typing import Annotated, Any
+import asyncio
 import json
 
 import asyncpg
@@ -12,7 +13,20 @@ from app.core.config import get_settings
 router = APIRouter(prefix="/admin/reports", tags=["admin-reports"])
 
 
-async def _admin_get(path: str, params: dict | None = None) -> Any:
+async def _admin_get(client: httpx.AsyncClient, settings, path: str, params: dict | None = None) -> Any:
+    try:
+        response = await client.get(
+            f"{settings.sub2api_base_url.rstrip('/')}/{path.lstrip('/')}",
+            headers={"x-api-key": settings.sub2api_admin_api_key},
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json().get("data")
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+async def _admin_get_simple(path: str, params: dict | None = None) -> Any:
     settings = get_settings()
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -32,7 +46,6 @@ def _days(start: date, end: date) -> int:
 
 
 def _sub2api_period(start: date, end: date) -> str:
-    """sub2api 只支持 week/month，按区间长度映射。"""
     return "week" if _days(start, end) <= 7 else "month"
 
 
@@ -42,10 +55,7 @@ def _default_range() -> tuple[date, date]:
     return start, end
 
 
-def _parse_dates(
-    start_date: str | None,
-    end_date: str | None,
-) -> tuple[date, date]:
+def _parse_dates(start_date: str | None, end_date: str | None) -> tuple[date, date]:
     end = date.fromisoformat(end_date) if end_date else date.today()
     start = date.fromisoformat(start_date) if start_date else end - timedelta(days=29)
     if start > end:
@@ -62,7 +72,7 @@ async def get_overview(
     start, end = _parse_dates(start_date, end_date)
     days = _days(start, end)
     settings = get_settings()
-    data = await _admin_get("/admin/dashboard/stats")
+    data = await _admin_get_simple("/admin/dashboard/stats")
 
     try:
         conn = await asyncpg.connect(settings.database_url)
@@ -92,9 +102,8 @@ async def get_trend(
 ):
     start, end = _parse_dates(start_date, end_date)
     period = _sub2api_period(start, end)
-    data = await _admin_get("/admin/dashboard/trend", {"period": period, "timezone": timezone})
+    data = await _admin_get_simple("/admin/dashboard/trend", {"period": period, "timezone": timezone})
 
-    # 过滤到选定区间
     if data and "trend" in data:
         data["trend"] = [
             item for item in data["trend"]
@@ -113,7 +122,7 @@ async def get_models(
 ):
     start, end = _parse_dates(start_date, end_date)
     period = _sub2api_period(start, end)
-    data = await _admin_get("/admin/dashboard/models", {"period": period, "timezone": timezone})
+    data = await _admin_get_simple("/admin/dashboard/models", {"period": period, "timezone": timezone})
     return data
 
 
@@ -203,3 +212,65 @@ async def get_accounts(
             "accounts": accounts,
         })
     return result
+
+
+@router.get("/users")
+async def search_users(
+    _: Annotated[dict, Depends(require_admin)],
+    search: str = Query(""),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    data = await _admin_get_simple(
+        "/admin/users",
+        {"search": search, "page": 1, "page_size": page_size},
+    )
+    items = data.get("items", []) if data else []
+    return [
+        {"id": u["id"], "email": u["email"], "username": u.get("username", "")}
+        for u in items
+    ]
+
+
+@router.get("/users/{user_id}/daily-trend")
+async def get_user_daily_trend(
+    user_id: int,
+    _: Annotated[dict, Depends(require_admin)],
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    timezone: str = Query("Asia/Shanghai"),
+):
+    start, end = _parse_dates(start_date, end_date)
+    # 最多查 60 天，避免请求过多
+    if (end - start).days > 59:
+        start = end - timedelta(days=59)
+
+    days = [(start + timedelta(days=i)) for i in range((end - start).days + 1)]
+    settings = get_settings()
+
+    async def fetch_day(client: httpx.AsyncClient, d: date) -> dict:
+        ds = str(d)
+        try:
+            resp = await client.get(
+                f"{settings.sub2api_base_url.rstrip('/')}/admin/dashboard/user-breakdown",
+                headers={"x-api-key": settings.sub2api_admin_api_key},
+                params={"start_date": ds, "end_date": ds, "timezone": timezone},
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", {})
+            users = data.get("users", [])
+            user_data = next((u for u in users if u["user_id"] == user_id), None)
+            if user_data:
+                return {
+                    "date": ds,
+                    "actual_cost": user_data["actual_cost"],
+                    "requests": user_data["requests"],
+                    "total_tokens": user_data["total_tokens"],
+                }
+        except Exception:
+            pass
+        return {"date": ds, "actual_cost": 0.0, "requests": 0, "total_tokens": 0}
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        results = await asyncio.gather(*[fetch_day(client, d) for d in days])
+
+    return {"items": list(results)}

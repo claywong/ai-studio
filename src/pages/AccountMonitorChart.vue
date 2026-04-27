@@ -333,11 +333,12 @@ async function onQuery() {
           <span class="badge" :class="chart.lastStatus === 'success' ? 'ok' : 'fail'">
             {{ chart.lastStatus === 'success' ? '正常' : '失败' }}
           </span>
-          <span class="sched-badge" :class="chart.schedulable ? 'sched-ok' : 'sched-off'" title="调度开关">
+          <span class="sched-badge" :class="chart.schedulable ? 'sched-ok' : 'sched-off'">
             {{ chart.schedulable ? '调度开' : '调度关' }}
           </span>
-          <span v-if="chart.scheduleTag" class="sched-badge" :class="chart.scheduleTag.cls" :title="chart.scheduleTag.tip">
+          <span v-if="chart.scheduleTag" class="sched-badge sched-has-tip" :class="chart.scheduleTag.cls">
             {{ chart.scheduleTag.label }}
+            <span class="sched-tip">{{ chart.scheduleTag.tip }}</span>
           </span>
           <span class="model-tag">{{ chart.model }}</span>
           <span class="rate">成功率 {{ chart.successRate }}</span>
@@ -428,7 +429,7 @@ async function onQuery() {
   background: #ffffff;
   border: 1px solid #e5e9f2;
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .card-header {
@@ -438,6 +439,7 @@ async function onQuery() {
   padding: 10px 16px;
   border-bottom: 1px solid #f1f5f9;
   flex-wrap: wrap;
+  overflow: visible;
 }
 
 .acct-name { font-size: 13px; font-weight: 700; color: #0f172a; }
@@ -453,17 +455,47 @@ async function onQuery() {
 .badge.fail { background: #fee2e2; color: #dc2626; }
 
 .sched-badge {
+  position: relative;
   font-size: 10px;
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
   cursor: default;
+  white-space: nowrap;
 }
+.sched-has-tip { cursor: pointer; }
 .sched-ok       { background: #d1fae5; color: #059669; }
 .sched-off      { background: #f1f5f9; color: #64748b; }
 .sched-temp     { background: #fef9c3; color: #a16207; }
 .sched-ratelimit{ background: #ffedd5; color: #c2410c; }
 .sched-overload { background: #fee2e2; color: #b91c1c; }
+
+.sched-tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  background: #1e293b;
+  color: #f1f5f9;
+  font-size: 11px;
+  font-weight: 400;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.sched-tip::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 8px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 4px solid #1e293b;
+}
+.sched-has-tip:hover .sched-tip { display: block; }
 
 .model-tag {
   font-size: 10px;

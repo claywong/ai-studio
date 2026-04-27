@@ -4,9 +4,11 @@ import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
-import { onMounted, onUnmounted, ref, computed } from 'vue'
+import { onUnmounted, ref, computed } from 'vue'
 import { api } from '../api/client'
 import { fetchAccountPlans, fetchPlanResults, type AccountWithPlan, type TestResult } from '../api/scheduledMonitor'
+
+use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
 
 interface AccountItem {
   id: number
@@ -17,18 +19,26 @@ interface AccountItem {
   groups: { id: number; name: string }[]
 }
 
-const loading = ref(true)
+const ACCOUNT_STATUS_OPTIONS = [
+  { value: 'active', label: '正常' },
+  { value: 'inactive', label: '停用' },
+  { value: 'error', label: '错误' },
+  { value: 'rate_limited', label: '限流中' },
+  { value: 'temp_unschedulable', label: '临时不可调度' },
+]
+
+const loading = ref(false)
 const error = ref('')
 const lastUpdated = ref('')
 const accountsWithData = ref<AccountWithPlan[]>([])
-const limit = ref(48)
+const allPlatforms = ref<string[]>([])
+const allGroups = ref<{ id: number; name: string }[]>([])
 
-// 筛选
+// 筛选条件
+const limit = ref(48)
 const filterPlatform = ref('')
 const filterStatus = ref('')
 const filterGroup = ref('')
-const allPlatforms = ref<string[]>([])
-const allGroups = ref<{ id: number; name: string }[]>([])
 
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -43,11 +53,34 @@ async function fetchAllAccounts(): Promise<AccountItem[]> {
 }
 
 async function load() {
+  loading.value = true
   try {
     error.value = ''
-    const accounts = await fetchAllAccounts()
-    // 按优先级升序
+    let accounts = await fetchAllAccounts()
     accounts.sort((a, b) => a.priority - b.priority)
+
+    // 收集筛选选项（基于全量账号）
+    const platforms = new Set<string>()
+    const groupMap = new Map<number, string>()
+    for (const a of accounts) {
+      if (a.platform) platforms.add(a.platform)
+      for (const g of a.groups) groupMap.set(g.id, g.name)
+    }
+    allPlatforms.value = [...platforms].sort()
+    allGroups.value = [...groupMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    // 按筛选条件过滤账号
+    if (filterPlatform.value) accounts = accounts.filter((a) => a.platform === filterPlatform.value)
+    if (filterStatus.value) accounts = accounts.filter((a) => a.status === filterStatus.value)
+    if (filterGroup.value) {
+      const gid = Number(filterGroup.value)
+      accounts = accounts.filter((a) => a.groups.some((g) => g.id === gid))
+    }
+
+    // 最多取前20个
+    accounts = accounts.slice(0, 20)
 
     const results: AccountWithPlan[] = []
     await Promise.all(
@@ -74,24 +107,32 @@ async function load() {
       }),
     )
 
-    // 按优先级升序排列
     results.sort((a, b) => a.priority - b.priority)
     accountsWithData.value = results
-
-    // 收集筛选选项
-    const platforms = new Set<string>()
-    const groupMap = new Map<number, string>()
-    for (const r of results) {
-      if (r.platform) platforms.add(r.platform)
-      for (const g of r.groups) groupMap.set(g.id, g.name)
-    }
-    allPlatforms.value = [...platforms].sort()
-    allGroups.value = [...groupMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
     lastUpdated.value = new Date().toLocaleTimeString()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
     loading.value = false
+  }
+}
+
+// 初始化只加载筛选选项，不加载图表数据
+async function initOptions() {
+  try {
+    const accounts = await fetchAllAccounts()
+    const platforms = new Set<string>()
+    const groupMap = new Map<number, string>()
+    for (const a of accounts) {
+      if (a.platform) platforms.add(a.platform)
+      for (const g of a.groups) groupMap.set(g.id, g.name)
+    }
+    allPlatforms.value = [...platforms].sort()
+    allGroups.value = [...groupMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    // 忽略
   }
 }
 
@@ -101,9 +142,7 @@ function buildChartOption(item: AccountWithPlan) {
   )
 
   const times = sorted.map((r) => fmtTime(r.started_at))
-  // 成功=1，失败=0
   const successData = sorted.map((r) => (r.status === 'success' ? 1 : 0))
-  // 延迟 ms，失败时显示 null
   const latencyData = sorted.map((r) => (r.status === 'success' ? r.latency_ms : null))
 
   return {
@@ -137,12 +176,7 @@ function buildChartOption(item: AccountWithPlan) {
         axisLabel: { fontSize: 10, color: '#94a3b8' },
         splitLine: { lineStyle: { color: '#f1f5f9' } },
       },
-      {
-        type: 'value',
-        min: 0,
-        max: 1,
-        show: false,
-      },
+      { type: 'value', min: 0, max: 1, show: false },
     ],
     series: [
       {
@@ -174,18 +208,8 @@ function buildChartOption(item: AccountWithPlan) {
   }
 }
 
-const chartOptions = computed(() => {
-  let items = accountsWithData.value
-  if (filterPlatform.value) items = items.filter((i) => i.platform === filterPlatform.value)
-  if (filterStatus.value) {
-    if (filterStatus.value === 'success') items = items.filter((i) => i.results[0]?.status === 'success')
-    else items = items.filter((i) => i.results[0]?.status !== 'success')
-  }
-  if (filterGroup.value) {
-    const gid = Number(filterGroup.value)
-    items = items.filter((i) => i.groups.some((g) => g.id === gid))
-  }
-  return items.map((item) => ({
+const chartOptions = computed(() =>
+  accountsWithData.value.map((item) => ({
     key: item.account_id,
     name: item.account_name,
     priority: item.priority,
@@ -193,8 +217,8 @@ const chartOptions = computed(() => {
     successRate: calcSuccessRate(item.results),
     lastStatus: item.results[0]?.status ?? 'unknown',
     option: buildChartOption(item),
-  }))
-})
+  })),
+)
 
 function calcSuccessRate(results: TestResult[]) {
   if (!results.length) return '-'
@@ -207,17 +231,14 @@ function startAutoRefresh() {
   timer = setInterval(() => void load(), 5 * 60 * 1000)
 }
 
-onMounted(async () => {
-  await load()
-  startAutoRefresh()
-})
+// 初始只加载筛选选项
+void initOptions()
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
 
-async function onRefresh() {
-  loading.value = true
+async function onQuery() {
   await load()
   startAutoRefresh()
 }
@@ -227,42 +248,52 @@ async function onRefresh() {
   <div class="page">
     <div class="toolbar">
       <span class="title">账号监控折线图</span>
-      <label>
-        条数
-        <select v-model="limit" @change="onRefresh">
+
+      <div class="filter-item">
+        <span class="filter-label">条数</span>
+        <select v-model="limit">
           <option :value="24">24条</option>
           <option :value="48">48条</option>
           <option :value="96">96条</option>
         </select>
-      </label>
-      <label>
-        平台
+      </div>
+
+      <div class="filter-item">
+        <span class="filter-label">平台</span>
         <select v-model="filterPlatform">
           <option value="">全部</option>
           <option v-for="p in allPlatforms" :key="p" :value="p">{{ p }}</option>
         </select>
-      </label>
-      <label>
-        状态
+      </div>
+
+      <div class="filter-item">
+        <span class="filter-label">状态</span>
         <select v-model="filterStatus">
-          <option value="">全部</option>
-          <option value="success">正常</option>
-          <option value="failed">失败</option>
+          <option value="">全部状态</option>
+          <option v-for="s in ACCOUNT_STATUS_OPTIONS" :key="s.value" :value="s.value">{{ s.label }}</option>
         </select>
-      </label>
-      <label>
-        分组
+      </div>
+
+      <div class="filter-item">
+        <span class="filter-label">分组</span>
         <select v-model="filterGroup">
           <option value="">全部</option>
           <option v-for="g in allGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
         </select>
-      </label>
-      <button @click="onRefresh">刷新</button>
+      </div>
+
+      <button class="btn-query" :disabled="loading" @click="onQuery">
+        {{ loading ? '加载中…' : '查询' }}
+      </button>
       <span v-if="lastUpdated" class="updated">更新于 {{ lastUpdated }}</span>
     </div>
 
     <div v-if="loading" class="loading">加载中…</div>
     <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-else-if="accountsWithData.length === 0 && lastUpdated === ''" class="empty">
+      设置筛选条件后点击「查询」加载数据
+    </div>
+    <div v-else-if="accountsWithData.length === 0" class="empty">没有符合条件的账号</div>
 
     <div v-else class="grid">
       <div v-for="chart in chartOptions" :key="chart.key" class="card">
@@ -293,7 +324,7 @@ async function onRefresh() {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 22px 40px;
+  padding: 16px 40px;
   background: #ffffff;
   border-bottom: 1px solid #e5e9f2;
   flex-wrap: wrap;
@@ -301,16 +332,20 @@ async function onRefresh() {
 
 .title { font-size: 22px; font-weight: 700; color: #0f172a; margin-right: 8px; }
 
-.toolbar label {
+.filter-item {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 600;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.toolbar select {
+.filter-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  line-height: 1;
+}
+
+.filter-item select {
   height: 30px;
   padding: 0 8px;
   border: 1px solid #d7deea;
@@ -321,9 +356,9 @@ async function onRefresh() {
   cursor: pointer;
 }
 
-.toolbar button {
+.btn-query {
   height: 32px;
-  padding: 0 14px;
+  padding: 0 18px;
   border: 1px solid #2563eb;
   border-radius: 6px;
   color: #ffffff;
@@ -331,13 +366,17 @@ async function onRefresh() {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  align-self: flex-end;
 }
 
-.toolbar button:hover { background: #1d4ed8; }
-.updated { font-size: 12px; color: #64748b; margin-left: auto; }
+.btn-query:hover:not(:disabled) { background: #1d4ed8; }
+.btn-query:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.loading, .error { padding: 60px; text-align: center; color: #64748b; font-size: 14px; }
+.updated { font-size: 12px; color: #64748b; margin-left: auto; align-self: center; }
+
+.loading, .error, .empty { padding: 80px; text-align: center; color: #64748b; font-size: 14px; }
 .error { color: #dc2626; }
+.empty { color: #94a3b8; }
 
 .grid {
   display: grid;
@@ -364,11 +403,7 @@ async function onRefresh() {
   flex-wrap: wrap;
 }
 
-.acct-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
+.acct-name { font-size: 13px; font-weight: 700; color: #0f172a; }
 
 .badge {
   font-size: 11px;
@@ -388,19 +423,8 @@ async function onRefresh() {
   border-radius: 4px;
 }
 
-.rate {
-  font-size: 11px;
-  color: #475569;
-  margin-left: auto;
-}
+.rate { font-size: 11px; color: #475569; margin-left: auto; }
+.priority { font-size: 11px; color: #94a3b8; }
 
-.priority {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.chart {
-  height: 160px;
-  width: 100%;
-}
+.chart { height: 160px; width: 100%; }
 </style>

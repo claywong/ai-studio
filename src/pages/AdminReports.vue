@@ -118,6 +118,16 @@ const trendOption = computed(() => {
       backgroundColor: '#ffffff',
       borderColor: '#e2e8f0',
       textStyle: { color: '#0f172a' },
+      formatter: (params: { seriesName: string; value: number; seriesIndex: number }[]) => {
+        const fmtT = (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(2)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : `${(v/1e3).toFixed(1)}K`
+        const date = (params[0] as any)?.axisValue ?? ''
+        const tokenSeries = params.filter(p => p.seriesName !== '成本($)')
+        const costSeries = params.find(p => p.seriesName === '成本($)')
+        const total = tokenSeries.reduce((s, p) => s + (p.value || 0), 0)
+        const lines = tokenSeries.map(p => `${p.seriesName}: ${fmtT(p.value)}`).join('<br/>')
+        const costLine = costSeries ? `<br/>成本: $${Number(costSeries.value).toFixed(2)}` : ''
+        return `${date}<br/>${lines}<br/>Total: ${fmtT(total)}${costLine}`
+      },
     },
     legend: { data: ['Input', 'Output', 'Cache Write', 'Cache Read', '成本($)'], textStyle: { color: '#64748b' }, bottom: 0 },
     grid: { left: 64, right: 54, top: 40, bottom: 48 },
@@ -174,7 +184,7 @@ const trendOption = computed(() => {
         type: 'bar',
         stack: 'tokens',
         data: items.map(i => i.cache_read_tokens ?? 0),
-        itemStyle: { color: '#e2e8f0', borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: '#7c3aed', borderRadius: [4, 4, 0, 0] },
         barMaxWidth: 32,
       },
       {
@@ -259,7 +269,7 @@ const modelOption = computed(() => {
         type: 'bar',
         stack: 'tokens',
         data: top.map(m => m.cache_read_tokens ?? 0).reverse(),
-        itemStyle: { color: '#cbd5e1', borderRadius: [0, 3, 3, 0] },
+        itemStyle: { color: '#7c3aed', borderRadius: [0, 3, 3, 0] },
         barMaxWidth: 20,
         label: {
           show: true, position: 'right', color: '#64748b', fontSize: 11,

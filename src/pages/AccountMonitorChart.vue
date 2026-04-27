@@ -236,6 +236,26 @@ const chartOptions = computed(() =>
   })),
 )
 
+function parseSchedReason(raw: string): { statusCode?: number; keyword?: string; message?: string } {
+  if (!raw) return {}
+  try {
+    const obj = JSON.parse(raw) as {
+      status_code?: number
+      matched_keyword?: string
+      error_message?: string
+    }
+    let message = obj.error_message ?? ''
+    if (message) {
+      try { message = (JSON.parse(message) as { message?: string }).message ?? message } catch { /* raw */ }
+      if (message.length > 80) message = message.slice(0, 80) + '…'
+    }
+    return { statusCode: obj.status_code, keyword: obj.matched_keyword, message: message || undefined }
+  } catch {
+    const msg = raw.length > 80 ? raw.slice(0, 80) + '…' : raw
+    return { message: msg }
+  }
+}
+
 function getScheduleTag(item: AccountWithPlan): { label: string; cls: string; tip: string } | null {
   const now = Date.now()
   if (item.overload_until && new Date(item.overload_until).getTime() > now) {
@@ -245,8 +265,13 @@ function getScheduleTag(item: AccountWithPlan): { label: string; cls: string; ti
     return { label: '限流', cls: 'sched-ratelimit', tip: `限流重置于 ${fmtTime(item.rate_limit_reset_at)}` }
   }
   if (item.temp_unschedulable_until && new Date(item.temp_unschedulable_until).getTime() > now) {
-    const reason = item.temp_unschedulable_reason ? `：${item.temp_unschedulable_reason}` : ''
-    return { label: '临时停调', cls: 'sched-temp', tip: `临时不可调度至 ${fmtTime(item.temp_unschedulable_until)}${reason}` }
+    const reason = parseSchedReason(item.temp_unschedulable_reason)
+    const until = fmtTime(item.temp_unschedulable_until)
+    const lines = [`⏱ 截止：${until}`]
+    if (reason.statusCode) lines.push(`🔴 状态码：${reason.statusCode}`)
+    if (reason.keyword) lines.push(`🔑 触发词：${reason.keyword}`)
+    if (reason.message) lines.push(`📄 ${reason.message}`)
+    return { label: '临时停调', cls: 'sched-temp', tip: lines.join('\n') }
   }
   return null
 }
@@ -338,7 +363,7 @@ async function onQuery() {
           </span>
           <span v-if="chart.scheduleTag" class="sched-badge sched-has-tip" :class="chart.scheduleTag.cls">
             {{ chart.scheduleTag.label }}
-            <span class="sched-tip">{{ chart.scheduleTag.tip }}</span>
+            <span class="sched-tip" v-html="chart.scheduleTag.tip.replace(/\n/g, '<br/>')"></span>
           </span>
           <span class="model-tag">{{ chart.model }}</span>
           <span class="rate">成功率 {{ chart.successRate }}</span>
@@ -478,13 +503,15 @@ async function onQuery() {
   z-index: 100;
   background: #1e293b;
   color: #f1f5f9;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
-  padding: 6px 10px;
-  border-radius: 6px;
+  line-height: 1.7;
+  padding: 8px 12px;
+  border-radius: 7px;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  min-width: 180px;
 }
 .sched-tip::before {
   content: '';

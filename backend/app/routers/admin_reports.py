@@ -45,16 +45,6 @@ def _days(start: date, end: date) -> int:
     return max(1, (end - start).days + 1)
 
 
-def _sub2api_period(start: date, end: date) -> str:
-    return "week" if _days(start, end) <= 7 else "month"
-
-
-def _default_range() -> tuple[date, date]:
-    end = date.today()
-    start = end - timedelta(days=29)
-    return start, end
-
-
 def _parse_dates(start_date: str | None, end_date: str | None) -> tuple[date, date]:
     end = date.fromisoformat(end_date) if end_date else date.today()
     start = date.fromisoformat(start_date) if start_date else end - timedelta(days=29)
@@ -101,15 +91,9 @@ async def get_trend(
     timezone: str = Query("Asia/Shanghai"),
 ):
     start, end = _parse_dates(start_date, end_date)
-    period = _sub2api_period(start, end)
-    data = await _admin_get_simple("/admin/dashboard/trend", {"period": period, "timezone": timezone})
-
-    if data and "trend" in data:
-        data["trend"] = [
-            item for item in data["trend"]
-            if str(start) <= item["date"] <= str(end)
-        ]
-
+    data = await _admin_get_simple("/admin/dashboard/trend", {
+        "start_date": str(start), "end_date": str(end), "timezone": timezone,
+    })
     return data
 
 
@@ -121,8 +105,9 @@ async def get_models(
     timezone: str = Query("Asia/Shanghai"),
 ):
     start, end = _parse_dates(start_date, end_date)
-    period = _sub2api_period(start, end)
-    data = await _admin_get_simple("/admin/dashboard/models", {"period": period, "timezone": timezone})
+    data = await _admin_get_simple("/admin/dashboard/models", {
+        "start_date": str(start), "end_date": str(end), "timezone": timezone,
+    })
     return data
 
 

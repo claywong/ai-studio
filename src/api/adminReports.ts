@@ -21,6 +21,9 @@ export interface TrendItem {
   actual_cost: number
   input_tokens: number
   output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_tokens: number
 }
 
 export interface TrendData {
@@ -37,6 +40,9 @@ export interface ModelItem {
   actual_cost: number
   input_tokens: number
   output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_tokens: number
 }
 
 export interface ModelsData {

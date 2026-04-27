@@ -119,7 +119,7 @@ const trendOption = computed(() => {
       borderColor: '#e2e8f0',
       textStyle: { color: '#0f172a' },
     },
-    legend: { data: ['Token 数', '成本($)'], textStyle: { color: '#64748b' }, bottom: 0 },
+    legend: { data: ['Input', 'Output', 'Cache Write', 'Cache Read', '成本($)'], textStyle: { color: '#64748b' }, bottom: 0 },
     grid: { left: 64, right: 54, top: 40, bottom: 48 },
     xAxis: {
       type: 'category',
@@ -146,10 +146,35 @@ const trendOption = computed(() => {
     ],
     series: [
       {
-        name: 'Token 数',
+        name: 'Input',
         type: 'bar',
-        data: items.map(i => i.input_tokens + i.output_tokens),
-        itemStyle: { color: '#2563eb', borderRadius: [4, 4, 0, 0] },
+        stack: 'tokens',
+        data: items.map(i => i.input_tokens),
+        itemStyle: { color: '#2563eb' },
+        barMaxWidth: 32,
+      },
+      {
+        name: 'Output',
+        type: 'bar',
+        stack: 'tokens',
+        data: items.map(i => i.output_tokens),
+        itemStyle: { color: '#16a34a' },
+        barMaxWidth: 32,
+      },
+      {
+        name: 'Cache Write',
+        type: 'bar',
+        stack: 'tokens',
+        data: items.map(i => i.cache_creation_tokens ?? 0),
+        itemStyle: { color: '#f59e0b' },
+        barMaxWidth: 32,
+      },
+      {
+        name: 'Cache Read',
+        type: 'bar',
+        stack: 'tokens',
+        data: items.map(i => i.cache_read_tokens ?? 0),
+        itemStyle: { color: '#e2e8f0', borderRadius: [4, 4, 0, 0] },
         barMaxWidth: 32,
       },
       {
@@ -158,8 +183,8 @@ const trendOption = computed(() => {
         yAxisIndex: 1,
         data: items.map(i => Number(i.actual_cost.toFixed(2))),
         smooth: true,
-        lineStyle: { color: '#f59e0b', width: 2 },
-        itemStyle: { color: '#f59e0b' },
+        lineStyle: { color: '#dc2626', width: 2 },
+        itemStyle: { color: '#dc2626' },
         symbol: 'circle',
         symbolSize: 5,
       },
@@ -170,9 +195,11 @@ const trendOption = computed(() => {
 // 模型分布图
 const modelOption = computed(() => {
   const top = [...modelsData.value]
-    .sort((a, b) => (b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens))
+    .sort((a, b) => (b.total_tokens ?? (b.input_tokens + b.output_tokens)) - (a.total_tokens ?? (a.input_tokens + a.output_tokens)))
     .slice(0, 8)
   const costMap = Object.fromEntries(top.map(m => [m.model, m.actual_cost]))
+  const fmtV = (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(2)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : `${(v/1e3).toFixed(1)}K`
+  const models = top.map(m => m.model).reverse()
   return {
     backgroundColor: 'transparent',
     tooltip: {
@@ -180,14 +207,16 @@ const modelOption = computed(() => {
       backgroundColor: '#ffffff',
       borderColor: '#e2e8f0',
       textStyle: { color: '#0f172a' },
-      formatter: (params: { name: string; value: number }[]) => {
-        const p = params[0]
-        const cost = costMap[p.name] ?? 0
-        const v = p.value >= 1e9 ? `${(p.value/1e9).toFixed(2)}B` : p.value >= 1e6 ? `${(p.value/1e6).toFixed(1)}M` : `${(p.value/1e3).toFixed(1)}K`
-        return `${p.name}<br/>Tokens: ${v}<br/>成本: $${Number(cost).toFixed(2)}`
+      formatter: (params: { seriesName: string; value: number; axisValue: string }[]) => {
+        const model = params[0]?.axisValue ?? ''
+        const cost = costMap[model] ?? 0
+        const total = params.reduce((s, p) => s + (p.value || 0), 0)
+        const lines = params.map(p => `${p.seriesName}: ${fmtV(p.value)}`).join('<br/>')
+        return `${model}<br/>${lines}<br/>Total: ${fmtV(total)}<br/>成本: $${Number(cost).toFixed(2)}`
       },
     },
-    grid: { left: 160, right: 60, top: 20, bottom: 20 },
+    legend: { data: ['Input', 'Output', 'Cache Write', 'Cache Read'], textStyle: { color: '#64748b' }, top: 0 },
+    grid: { left: 160, right: 80, top: 30, bottom: 10 },
     xAxis: {
       type: 'value',
       axisLabel: { color: '#64748b', formatter: (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : v >= 1e6 ? `${(v/1e6).toFixed(0)}M` : `${(v/1e3).toFixed(0)}K` },
@@ -195,27 +224,53 @@ const modelOption = computed(() => {
     },
     yAxis: {
       type: 'category',
-      data: top.map(m => m.model).reverse(),
+      data: models,
       axisLabel: { color: '#334155', fontSize: 11 },
       axisLine: { lineStyle: { color: '#dbe3ef' } },
       axisTick: { show: false },
     },
-    series: [{
-      type: 'bar',
-      data: top.map(m => m.input_tokens + m.output_tokens).reverse(),
-      itemStyle: {
-        color: (params: { dataIndex: number }) => {
-          const colors = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#0891b2', '#7c3aed', '#db2777', '#65a30d']
-          return colors[params.dataIndex % colors.length]
+    series: [
+      {
+        name: 'Input',
+        type: 'bar',
+        stack: 'tokens',
+        data: top.map(m => m.input_tokens).reverse(),
+        itemStyle: { color: '#2563eb' },
+        barMaxWidth: 20,
+      },
+      {
+        name: 'Output',
+        type: 'bar',
+        stack: 'tokens',
+        data: top.map(m => m.output_tokens).reverse(),
+        itemStyle: { color: '#16a34a' },
+        barMaxWidth: 20,
+      },
+      {
+        name: 'Cache Write',
+        type: 'bar',
+        stack: 'tokens',
+        data: top.map(m => m.cache_creation_tokens ?? 0).reverse(),
+        itemStyle: { color: '#f59e0b' },
+        barMaxWidth: 20,
+      },
+      {
+        name: 'Cache Read',
+        type: 'bar',
+        stack: 'tokens',
+        data: top.map(m => m.cache_read_tokens ?? 0).reverse(),
+        itemStyle: { color: '#cbd5e1', borderRadius: [0, 3, 3, 0] },
+        barMaxWidth: 20,
+        label: {
+          show: true, position: 'right', color: '#64748b', fontSize: 11,
+          formatter: (p: { value: number; dataIndex: number }) => {
+            const total = top[top.length - 1 - p.dataIndex]
+            const t = (total?.total_tokens ?? 0)
+            return fmtV(t)
+          },
         },
-        borderRadius: [0, 3, 3, 0],
       },
-      barMaxWidth: 20,
-      label: {
-        show: true, position: 'right', color: '#64748b', fontSize: 11,
-        formatter: (p: { value: number }) => p.value >= 1e9 ? `${(p.value/1e9).toFixed(2)}B` : p.value >= 1e6 ? `${(p.value/1e6).toFixed(1)}M` : `${(p.value/1e3).toFixed(1)}K`,
-      },
-    }],
+    ],
   }
 })
 

@@ -18,7 +18,7 @@ const HISTORY_STORAGE_KEY = 'g7e6_ai_studio_image_history'
 const HISTORY_DB_NAME = 'g7e6_ai_studio'
 const HISTORY_DB_STORE = 'image_history'
 const MAX_HISTORY_ITEMS = 30
-const MAX_REFERENCE_IMAGES = 3
+const MAX_REFERENCE_IMAGES = 4
 
 interface HistoryItem {
   id: string
@@ -313,7 +313,7 @@ function handleReferenceChange(event: Event) {
   const input = event.target as HTMLInputElement
   const incomingFiles = Array.from(input.files ?? [])
     .filter(file => file.type.startsWith('image/'))
-    .filter(file => file.size <= 5 * 1024 * 1024)
+    .filter(file => file.size <= 8 * 1024 * 1024)
 
   const mergedFiles = [...referenceImages.value]
   for (const file of incomingFiles) {
@@ -432,10 +432,10 @@ async function submit() {
               <input type="file" accept="image/jpeg,image/png,image/webp" multiple @change="handleReferenceChange">
               <span class="upload-icon">▧</span>
               <strong>{{ referenceImages.length === 0 ? '点击或拖拽图片到这里' : '继续添加参考图' }}</strong>
-              <small>JPEG, PNG, WebP · 每张最大5MB · 最多3张</small>
+              <small>JPEG, PNG, WebP · 每张最大8MB · 最多4张</small>
             </label>
           </div>
-          <div class="counter">{{ referenceImages.length }} / 3 张图片</div>
+          <div class="counter">{{ referenceImages.length }} / 4 张图片</div>
         </div>
 
         <div class="field token-row">

@@ -214,6 +214,108 @@ async def get_accounts(
     return result
 
 
+@router.get("/account-latency")
+async def get_account_latency(
+    _: Annotated[dict, Depends(require_admin)],
+    limit: int = Query(300, ge=1, le=1000),
+    recent_minutes: int = Query(10, ge=1, le=60),
+):
+    """按账号统计最近 N 条请求的 TTFT / 总时延，以及最近 M 分钟的实时数据，支持按模型细分。"""
+    settings = get_settings()
+
+    sql_all = """
+        WITH ranked AS (
+            SELECT
+                ul.account_id,
+                a.name                                                  AS account_name,
+                COALESCE(REGEXP_REPLACE(a.name, '[-_].*$', ''), '未知') AS grp,
+                ul.model,
+                ul.first_token_ms,
+                ul.duration_ms,
+                ROW_NUMBER() OVER (PARTITION BY ul.account_id ORDER BY ul.created_at DESC) AS rn
+            FROM usage_logs ul
+            LEFT JOIN accounts a ON a.id = ul.account_id
+            WHERE ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
+        ),
+        recent AS (
+            SELECT
+                ul.account_id,
+                ul.model,
+                ul.first_token_ms,
+                ul.duration_ms
+            FROM usage_logs ul
+            WHERE ul.created_at >= NOW() - ($2 || ' minutes')::interval
+              AND ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
+        )
+        SELECT
+            r.account_id,
+            r.account_name,
+            r.grp,
+            r.model,
+            COUNT(*)                                                                         AS requests,
+            ROUND(AVG(r.first_token_ms) FILTER (WHERE r.first_token_ms > 0))::int           AS ttft_avg,
+            PERCENTILE_CONT(0.9) WITHIN GROUP (
+                ORDER BY CASE WHEN r.first_token_ms > 0 THEN r.first_token_ms END
+            )::int                                                                           AS ttft_p90,
+            ROUND(AVG(r.duration_ms))::int                                                   AS dur_avg,
+            PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY r.duration_ms)::int                 AS dur_p90,
+            COUNT(rc.account_id)                                                             AS recent_requests,
+            ROUND(AVG(rc.first_token_ms) FILTER (WHERE rc.first_token_ms > 0))::int         AS recent_ttft_avg,
+            PERCENTILE_CONT(0.9) WITHIN GROUP (
+                ORDER BY CASE WHEN rc.first_token_ms > 0 THEN rc.first_token_ms END
+            )::int                                                                           AS recent_ttft_p90,
+            ROUND(AVG(rc.duration_ms))::int                                                  AS recent_dur_avg
+        FROM ranked r
+        LEFT JOIN recent rc ON rc.account_id = r.account_id AND rc.model = r.model
+        WHERE r.rn <= $1
+        GROUP BY r.account_id, r.account_name, r.grp, r.model
+        ORDER BY r.account_id, r.model
+    """
+
+    try:
+        conn = await asyncpg.connect(settings.database_url)
+        try:
+            rows = await conn.fetch(sql_all, limit, str(recent_minutes))
+        finally:
+            await conn.close()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # 按账号聚合，模型作为子列表
+    accounts: dict[int, dict] = {}
+    for row in rows:
+        aid = row["account_id"]
+        if aid not in accounts:
+            accounts[aid] = {
+                "account_id": aid,
+                "account_name": row["account_name"] or f"id={aid}",
+                "group": row["grp"],
+                "models": [],
+            }
+        accounts[aid]["models"].append({
+            "model": row["model"] or "unknown",
+            "requests": row["requests"],
+            "ttft_avg": row["ttft_avg"],
+            "ttft_p90": row["ttft_p90"],
+            "dur_avg": row["dur_avg"],
+            "dur_p90": row["dur_p90"],
+            "recent_requests": row["recent_requests"],
+            "recent_ttft_avg": row["recent_ttft_avg"],
+            "recent_ttft_p90": row["recent_ttft_p90"],
+            "recent_dur_avg": row["recent_dur_avg"],
+        })
+
+    # 按组聚合
+    groups: dict[str, dict] = {}
+    for acct in accounts.values():
+        g = acct["group"]
+        if g not in groups:
+            groups[g] = {"group": g, "accounts": []}
+        groups[g]["accounts"].append(acct)
+
+    return {"groups": list(groups.values()), "limit": limit, "recent_minutes": recent_minutes}
+
+
 @router.get("/users")
 async def search_users(
     _: Annotated[dict, Depends(require_admin)],

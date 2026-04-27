@@ -234,7 +234,7 @@ async def get_account_latency(
                 ul.duration_ms,
                 ROW_NUMBER() OVER (PARTITION BY ul.account_id ORDER BY ul.created_at DESC) AS rn
             FROM usage_logs ul
-            LEFT JOIN accounts a ON a.id = ul.account_id
+            INNER JOIN accounts a ON a.id = ul.account_id AND a.status != 'deleted'
             WHERE ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
         ),
         recent AS (
@@ -269,7 +269,7 @@ async def get_account_latency(
         LEFT JOIN recent rc ON rc.account_id = r.account_id AND rc.model = r.model
         WHERE r.rn <= $1
         GROUP BY r.account_id, r.account_name, r.grp, r.model
-        ORDER BY r.account_id, r.model
+        ORDER BY COUNT(*) DESC, r.account_id, r.model
     """
 
     try:
@@ -305,15 +305,20 @@ async def get_account_latency(
             "recent_dur_avg": row["recent_dur_avg"],
         })
 
-    # 按组聚合
+    # 按组聚合，组内账号已按请求数降序（SQL 保证），组本身也按总请求数降序
     groups: dict[str, dict] = {}
     for acct in accounts.values():
         g = acct["group"]
         if g not in groups:
-            groups[g] = {"group": g, "accounts": []}
+            groups[g] = {"group": g, "accounts": [], "total_requests": 0}
         groups[g]["accounts"].append(acct)
+        groups[g]["total_requests"] += sum(m["requests"] for m in acct["models"])
 
-    return {"groups": list(groups.values()), "limit": limit, "recent_minutes": recent_minutes}
+    sorted_groups = sorted(groups.values(), key=lambda x: x["total_requests"], reverse=True)
+    for grp in sorted_groups:
+        del grp["total_requests"]
+
+    return {"groups": sorted_groups, "limit": limit, "recent_minutes": recent_minutes}
 
 
 @router.get("/users")

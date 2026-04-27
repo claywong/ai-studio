@@ -8,13 +8,13 @@ import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { api } from '../api/client'
 import { fetchAccountPlans, fetchPlanResults, type AccountWithPlan, type TestResult } from '../api/scheduledMonitor'
 
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
-
 interface AccountItem {
   id: number
   name: string
   priority: number
   status: string
+  platform: string
+  groups: { id: number; name: string }[]
 }
 
 const loading = ref(true)
@@ -22,6 +22,14 @@ const error = ref('')
 const lastUpdated = ref('')
 const accountsWithData = ref<AccountWithPlan[]>([])
 const limit = ref(48)
+
+// 筛选
+const filterPlatform = ref('')
+const filterStatus = ref('')
+const filterGroup = ref('')
+const allPlatforms = ref<string[]>([])
+const allGroups = ref<{ id: number; name: string }[]>([])
+
 let timer: ReturnType<typeof setInterval> | null = null
 
 function fmtTime(iso: string) {
@@ -55,6 +63,8 @@ async function load() {
             account_id: acct.id,
             account_name: acct.name,
             priority: acct.priority,
+            platform: acct.platform,
+            groups: acct.groups,
             plan,
             results: testResults,
           })
@@ -67,6 +77,16 @@ async function load() {
     // 按优先级升序排列
     results.sort((a, b) => a.priority - b.priority)
     accountsWithData.value = results
+
+    // 收集筛选选项
+    const platforms = new Set<string>()
+    const groupMap = new Map<number, string>()
+    for (const r of results) {
+      if (r.platform) platforms.add(r.platform)
+      for (const g of r.groups) groupMap.set(g.id, g.name)
+    }
+    allPlatforms.value = [...platforms].sort()
+    allGroups.value = [...groupMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
     lastUpdated.value = new Date().toLocaleTimeString()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -154,8 +174,18 @@ function buildChartOption(item: AccountWithPlan) {
   }
 }
 
-const chartOptions = computed(() =>
-  accountsWithData.value.map((item) => ({
+const chartOptions = computed(() => {
+  let items = accountsWithData.value
+  if (filterPlatform.value) items = items.filter((i) => i.platform === filterPlatform.value)
+  if (filterStatus.value) {
+    if (filterStatus.value === 'success') items = items.filter((i) => i.results[0]?.status === 'success')
+    else items = items.filter((i) => i.results[0]?.status !== 'success')
+  }
+  if (filterGroup.value) {
+    const gid = Number(filterGroup.value)
+    items = items.filter((i) => i.groups.some((g) => g.id === gid))
+  }
+  return items.map((item) => ({
     key: item.account_id,
     name: item.account_name,
     priority: item.priority,
@@ -163,8 +193,8 @@ const chartOptions = computed(() =>
     successRate: calcSuccessRate(item.results),
     lastStatus: item.results[0]?.status ?? 'unknown',
     option: buildChartOption(item),
-  })),
-)
+  }))
+})
 
 function calcSuccessRate(results: TestResult[]) {
   if (!results.length) return '-'
@@ -203,6 +233,28 @@ async function onRefresh() {
           <option :value="24">24条</option>
           <option :value="48">48条</option>
           <option :value="96">96条</option>
+        </select>
+      </label>
+      <label>
+        平台
+        <select v-model="filterPlatform">
+          <option value="">全部</option>
+          <option v-for="p in allPlatforms" :key="p" :value="p">{{ p }}</option>
+        </select>
+      </label>
+      <label>
+        状态
+        <select v-model="filterStatus">
+          <option value="">全部</option>
+          <option value="success">正常</option>
+          <option value="failed">失败</option>
+        </select>
+      </label>
+      <label>
+        分组
+        <select v-model="filterGroup">
+          <option value="">全部</option>
+          <option v-for="g in allGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
         </select>
       </label>
       <button @click="onRefresh">刷新</button>

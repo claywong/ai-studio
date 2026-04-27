@@ -408,7 +408,14 @@ async def get_accounts_list(
     data = await _admin_get_simple("/admin/accounts", {"page": 1, "page_size": page_size})
     items = data.get("items", []) if data else []
     return [
-        {"id": a["id"], "name": a["name"], "priority": a.get("priority", 0), "status": a.get("status", "")}
+        {
+            "id": a["id"],
+            "name": a["name"],
+            "priority": a.get("priority", 0),
+            "status": a.get("status", ""),
+            "platform": a.get("platform", ""),
+            "groups": [{"id": g["id"], "name": g["name"]} for g in (a.get("groups") or [])],
+        }
         for a in items
     ]
 

@@ -27,6 +27,8 @@ export interface AccountWithPlan {
   account_id: number
   account_name: string
   priority: number
+  platform: string
+  groups: { id: number; name: string }[]
   plan: ScheduledTestPlan
   results: TestResult[]
 }

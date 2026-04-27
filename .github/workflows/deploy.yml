@@ -22,9 +22,6 @@ jobs:
             # 拉取最新代码
             git pull origin main
 
-            # 安装/更新 Python 依赖
-            .venv/bin/pip install -e backend/ -q
-
             # 构建前端
             npm run build
 

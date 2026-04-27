@@ -17,6 +17,12 @@ interface AccountItem {
   status: string
   platform: string
   groups: { id: number; name: string }[]
+  schedulable: boolean
+  temp_unschedulable_until: string | null
+  temp_unschedulable_reason: string
+  rate_limited_at: string | null
+  rate_limit_reset_at: string | null
+  overload_until: string | null
 }
 
 const ACCOUNT_STATUS_OPTIONS = [
@@ -98,6 +104,12 @@ async function load() {
             priority: acct.priority,
             platform: acct.platform,
             groups: acct.groups,
+            schedulable: acct.schedulable,
+            temp_unschedulable_until: acct.temp_unschedulable_until,
+            temp_unschedulable_reason: acct.temp_unschedulable_reason,
+            rate_limited_at: acct.rate_limited_at,
+            rate_limit_reset_at: acct.rate_limit_reset_at,
+            overload_until: acct.overload_until,
             plan,
             results: testResults,
           })
@@ -218,9 +230,26 @@ const chartOptions = computed(() =>
     model: item.plan.model_id,
     successRate: calcSuccessRate(item.results),
     lastStatus: item.results[0]?.status ?? 'unknown',
+    scheduleTag: getScheduleTag(item),
+    schedulable: item.schedulable,
     option: buildChartOption(item),
   })),
 )
+
+function getScheduleTag(item: AccountWithPlan): { label: string; cls: string; tip: string } | null {
+  const now = Date.now()
+  if (item.overload_until && new Date(item.overload_until).getTime() > now) {
+    return { label: '过载', cls: 'sched-overload', tip: `过载至 ${fmtTime(item.overload_until)}` }
+  }
+  if (item.rate_limit_reset_at && new Date(item.rate_limit_reset_at).getTime() > now) {
+    return { label: '限流', cls: 'sched-ratelimit', tip: `限流重置于 ${fmtTime(item.rate_limit_reset_at)}` }
+  }
+  if (item.temp_unschedulable_until && new Date(item.temp_unschedulable_until).getTime() > now) {
+    const reason = item.temp_unschedulable_reason ? `：${item.temp_unschedulable_reason}` : ''
+    return { label: '临时停调', cls: 'sched-temp', tip: `临时不可调度至 ${fmtTime(item.temp_unschedulable_until)}${reason}` }
+  }
+  return null
+}
 
 function calcSuccessRate(results: TestResult[]) {
   if (!results.length) return '-'
@@ -303,6 +332,12 @@ async function onQuery() {
           <span class="acct-name">{{ chart.name }}</span>
           <span class="badge" :class="chart.lastStatus === 'success' ? 'ok' : 'fail'">
             {{ chart.lastStatus === 'success' ? '正常' : '失败' }}
+          </span>
+          <span class="sched-badge" :class="chart.schedulable ? 'sched-ok' : 'sched-off'" title="调度开关">
+            {{ chart.schedulable ? '调度开' : '调度关' }}
+          </span>
+          <span v-if="chart.scheduleTag" class="sched-badge" :class="chart.scheduleTag.cls" :title="chart.scheduleTag.tip">
+            {{ chart.scheduleTag.label }}
           </span>
           <span class="model-tag">{{ chart.model }}</span>
           <span class="rate">成功率 {{ chart.successRate }}</span>
@@ -416,6 +451,19 @@ async function onQuery() {
 
 .badge.ok { background: #dcfce7; color: #16a34a; }
 .badge.fail { background: #fee2e2; color: #dc2626; }
+
+.sched-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: default;
+}
+.sched-ok       { background: #d1fae5; color: #059669; }
+.sched-off      { background: #f1f5f9; color: #64748b; }
+.sched-temp     { background: #fef9c3; color: #a16207; }
+.sched-ratelimit{ background: #ffedd5; color: #c2410c; }
+.sched-overload { background: #fee2e2; color: #b91c1c; }
 
 .model-tag {
   font-size: 10px;

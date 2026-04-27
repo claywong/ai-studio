@@ -415,6 +415,12 @@ async def get_accounts_list(
             "status": a.get("status", ""),
             "platform": a.get("platform", ""),
             "groups": [{"id": g["id"], "name": g["name"]} for g in (a.get("groups") or [])],
+            "schedulable": a.get("schedulable", False),
+            "temp_unschedulable_until": a.get("temp_unschedulable_until"),
+            "temp_unschedulable_reason": a.get("temp_unschedulable_reason", ""),
+            "rate_limited_at": a.get("rate_limited_at"),
+            "rate_limit_reset_at": a.get("rate_limit_reset_at"),
+            "overload_until": a.get("overload_until"),
         }
         for a in items
     ]

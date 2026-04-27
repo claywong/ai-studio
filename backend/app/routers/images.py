@@ -20,7 +20,7 @@ class ImageGenerationRequest(BaseModel):
     aspect_ratio: AspectRatio = "1:1"
     size_label: SizeLabel = "1K"
     model: str = "gpt-image-2"
-    reference_images: list[str] = Field(default_factory=list, max_length=3)
+    reference_images: list[str] = Field(default_factory=list, max_length=4)
     token_id: int
 
 
@@ -167,7 +167,7 @@ async def edit_image(
     aspect_ratio: Annotated[AspectRatio, Form()] = "1:1",
     size_label: Annotated[SizeLabel, Form()] = "1K",
     model: Annotated[str, Form()] = "gpt-image-2",
-    reference_images: Annotated[list[UploadFile], File(max_length=3)] = [],
+    reference_images: Annotated[list[UploadFile], File(max_length=4)] = [],
     token_id: Annotated[int, Form()] = 0,
     authorization: Annotated[str | None, Header()] = None,
 ):
@@ -175,8 +175,8 @@ async def edit_image(
     api_key = await resolve_openai_api_key(token_id, authorization)
     if not reference_images:
         raise HTTPException(status_code=400, detail="At least one reference image is required")
-    if len(reference_images) > 3:
-        raise HTTPException(status_code=400, detail="At most 3 reference images are allowed")
+    if len(reference_images) > 4:
+        raise HTTPException(status_code=400, detail="At most 4 reference images are allowed")
 
     size = ASPECT_RATIO_SIZES[size_label][aspect_ratio]
     data = {
@@ -190,8 +190,8 @@ async def edit_image(
     files: list[tuple[str, tuple[str, bytes, str]]] = []
     for image in reference_images:
         content = await image.read()
-        if len(content) > 5 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail=f"{image.filename} exceeds 5MB")
+        if len(content) > 8 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"{image.filename} exceeds 8MB")
         content_type = image.content_type or "application/octet-stream"
         if content_type not in {"image/jpeg", "image/png", "image/webp"}:
             raise HTTPException(status_code=400, detail=f"Unsupported image type: {content_type}")

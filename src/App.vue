@@ -21,6 +21,7 @@ const isAdmin = computed(() => {
         <RouterLink to="/admin/channel-status">渠道状态</RouterLink>
         <RouterLink to="/admin/user-trend">用户趋势</RouterLink>
         <RouterLink to="/admin/account-latency">账号延迟</RouterLink>
+        <RouterLink to="/admin/account-monitor-chart">监控折线图</RouterLink>
       </template>
     </nav>
     <RouterView />

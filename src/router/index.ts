@@ -4,6 +4,7 @@ import AdminReports from '../pages/AdminReports.vue'
 import ChannelStatus from '../pages/ChannelStatus.vue'
 import UserTrend from '../pages/UserTrend.vue'
 import AccountLatency from '../pages/AccountLatency.vue'
+import AccountMonitorChart from '../pages/AccountMonitorChart.vue'
 
 const router = createRouter({
   history: createWebHistory('/app/ai/'),
@@ -28,6 +29,11 @@ const router = createRouter({
     {
       path: '/admin/account-latency',
       component: AccountLatency,
+      meta: { requiresAdmin: true },
+    },
+    {
+      path: '/admin/account-monitor-chart',
+      component: AccountMonitorChart,
       meta: { requiresAdmin: true },
     },
   ],

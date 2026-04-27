@@ -41,6 +41,22 @@ async def _admin_get_simple(path: str, params: dict | None = None) -> Any:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+async def _admin_get_raw(path: str, params: dict | None = None) -> Any:
+    """返回原始 JSON（不提取 .data），适用于直接返回数组的接口。"""
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(
+                f"{settings.sub2api_base_url.rstrip('/')}/{path.lstrip('/')}",
+                headers={"x-api-key": settings.sub2api_admin_api_key},
+                params=params,
+            )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 def _days(start: date, end: date) -> int:
     return max(1, (end - start).days + 1)
 
@@ -382,6 +398,40 @@ async def get_user_breakdown(
         {"start_date": str(start), "end_date": str(end), "timezone": timezone},
     )
     return data
+
+
+@router.get("/accounts-list")
+async def get_accounts_list(
+    _: Annotated[dict, Depends(require_admin)],
+    page_size: int = Query(200, ge=1, le=200),
+):
+    data = await _admin_get_simple("/admin/accounts", {"page": 1, "page_size": page_size})
+    items = data.get("items", []) if data else []
+    return [
+        {"id": a["id"], "name": a["name"], "priority": a.get("priority", 0), "status": a.get("status", "")}
+        for a in items
+    ]
+
+
+@router.get("/accounts/{account_id}/scheduled-test-plans")
+async def get_account_scheduled_plans(
+    account_id: int,
+    _: Annotated[dict, Depends(require_admin)],
+):
+    return await _admin_get_raw(f"/admin/accounts/{account_id}/scheduled-test-plans")
+
+
+@router.get("/scheduled-test-plans/{plan_id}/results")
+async def get_plan_results(
+    plan_id: int,
+    _: Annotated[dict, Depends(require_admin)],
+    limit: int = Query(48, ge=1, le=300),
+    timezone: str = Query("Asia/Shanghai"),
+):
+    return await _admin_get_raw(
+        f"/admin/scheduled-test-plans/{plan_id}/results",
+        {"limit": limit, "timezone": timezone},
+    )
 
 
 @router.get("/users/{user_id}/usage-logs")

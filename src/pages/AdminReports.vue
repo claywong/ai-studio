@@ -64,6 +64,10 @@ const modelsData    = ref<ModelItem[]>([])
 const accountGroups = ref<AccountGroup[]>([])
 const expandedGroups = ref<Set<string>>(new Set())
 const userBreakdown = ref<UserBreakdownItem[]>([])
+const userPage = ref(1)
+const userPageSize = 20
+const userPagedData = computed(() => userBreakdown.value.slice((userPage.value - 1) * userPageSize, userPage.value * userPageSize))
+const userTotalPages = computed(() => Math.ceil(userBreakdown.value.length / userPageSize))
 const lastUpdatedAt = ref('')
 
 function toggleGroup(name: string) {
@@ -96,6 +100,7 @@ async function loadAll() {
     modelsData.value    = md.models ?? []
     accountGroups.value = ac
     userBreakdown.value = (ub?.users ?? []).sort((a, b) => b.actual_cost - a.actual_cost)
+    userPage.value = 1
     lastUpdatedAt.value = new Date().toISOString()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } }; message?: string }
@@ -184,7 +189,7 @@ const trendOption = computed(() => {
         type: 'bar',
         stack: 'tokens',
         data: items.map(i => i.cache_read_tokens ?? 0),
-        itemStyle: { color: '#7c3aed', borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: '#a78bfa', borderRadius: [4, 4, 0, 0] },
         barMaxWidth: 32,
       },
       {
@@ -269,7 +274,7 @@ const modelOption = computed(() => {
         type: 'bar',
         stack: 'tokens',
         data: top.map(m => m.cache_read_tokens ?? 0).reverse(),
-        itemStyle: { color: '#7c3aed', borderRadius: [0, 3, 3, 0] },
+        itemStyle: { color: '#a78bfa', borderRadius: [0, 3, 3, 0] },
         barMaxWidth: 20,
         label: {
           show: true, position: 'right', color: '#64748b', fontSize: 11,
@@ -508,7 +513,7 @@ function fmtDate(s: string | null) {
                 <tr v-if="!userBreakdown.length">
                   <td colspan="5"><div class="empty-table">暂无数据</div></td>
                 </tr>
-                <tr v-for="u in userBreakdown" :key="u.user_id">
+                <tr v-for="u in userPagedData" :key="u.user_id">
                   <td class="col-name">{{ u.email }}</td>
                   <td class="col-num">{{ u.requests.toLocaleString() }}</td>
                   <td class="col-num">{{ fmt(u.total_tokens) }}</td>
@@ -518,6 +523,11 @@ function fmtDate(s: string | null) {
               </tbody>
             </table>
           </div>
+          <div v-if="userTotalPages > 1" class="pagination">
+            <button :disabled="userPage === 1" @click="userPage--">‹</button>
+            <span>{{ userPage }} / {{ userTotalPages }}</span>
+            <button :disabled="userPage === userTotalPages" @click="userPage++">›</button>
+          </div>
         </section>
       </template>
     </main>
@@ -525,6 +535,30 @@ function fmtDate(s: string | null) {
 </template>
 
 <style scoped>
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0 4px;
+  font-size: 13px;
+  color: #64748b;
+}
+.pagination button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: #334155;
+  transition: background 0.15s;
+}
+.pagination button:hover:not(:disabled) { background: #f1f5f9; }
+.pagination button:disabled { opacity: 0.35; cursor: default; }
+
 .reports-shell {
   min-height: 100vh;
   padding: 0 0 40px;

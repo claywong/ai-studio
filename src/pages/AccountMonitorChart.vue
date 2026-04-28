@@ -150,7 +150,7 @@ function buildChartOption(item: AccountWithPlan) {
 
   const times = sorted.map((r) => fmtTime(r.started_at))
   const successData = sorted.map((r) => (r.status === 'success' ? 1 : 0))
-  const latencyData = sorted.map((r) => (r.status === 'success' ? r.latency_ms : null))
+  const latencyData = sorted.map((r) => (r.status === 'success' && r.latency_ms != null ? +(r.latency_ms / 1000).toFixed(2) : null))
 
   return {
     backgroundColor: 'transparent',
@@ -159,12 +159,12 @@ function buildChartOption(item: AccountWithPlan) {
       axisPointer: { type: 'cross' },
       formatter(params: { seriesName: string; value: number | null; name: string }[]) {
         const time = params[0]?.name ?? ''
-        const lines = params.map((p) => {
-          if (p.seriesName === '可用性') {
-            return `${p.seriesName}: ${p.value === 1 ? '✓ 成功' : '✗ 失败'}`
-          }
-          return `${p.seriesName}: ${p.value != null ? p.value + 'ms' : '-'}`
-        })
+        const lines = params
+          .filter((p) => p.seriesName !== '可用性')
+          .map((p) => {
+            if (p.value == null) return `${p.seriesName}: -`
+            return `${p.seriesName}: ${p.value.toFixed(2)}s`
+          })
         return `${time}<br/>${lines.join('<br/>')}`
       },
     },
@@ -178,11 +178,11 @@ function buildChartOption(item: AccountWithPlan) {
     yAxis: [
       {
         type: 'value',
-        name: '延迟(ms)',
+        name: '延迟(s)',
         min: 0,
-        max: 40000,
+        max: 40,
         nameTextStyle: { fontSize: 10, color: '#94a3b8' },
-        axisLabel: { fontSize: 10, color: '#94a3b8', formatter: (v: number) => v >= 1000 ? (v / 1000) + 's' : v },
+        axisLabel: { fontSize: 10, color: '#94a3b8', formatter: (v: number) => v + 's' },
         splitLine: { lineStyle: { color: '#f1f5f9' } },
       },
       { type: 'value', min: 0, max: 1, show: false },

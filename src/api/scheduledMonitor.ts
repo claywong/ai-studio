@@ -19,6 +19,7 @@ export interface TestResult {
   response_text: string
   error_message: string
   latency_ms: number | null
+  ttft_ms: number | null
   started_at: string
   finished_at: string
 }

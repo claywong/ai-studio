@@ -107,10 +107,44 @@ async def get_trend(
     timezone: str = Query("Asia/Shanghai"),
 ):
     start, end = _parse_dates(start_date, end_date)
-    data = await _admin_get_simple("/admin/dashboard/trend", {
-        "start_date": str(start), "end_date": str(end), "timezone": timezone,
-    })
-    return data
+    settings = get_settings()
+    sql = """
+        SELECT
+            (created_at AT TIME ZONE $3)::date AS day,
+            COALESCE(SUM(input_tokens), 0)           AS input_tokens,
+            COALESCE(SUM(output_tokens), 0)          AS output_tokens,
+            COALESCE(SUM(cache_creation_tokens), 0)  AS cache_creation_tokens,
+            COALESCE(SUM(cache_read_tokens), 0)      AS cache_read_tokens,
+            COUNT(*)                                 AS requests,
+            ROUND(SUM(total_cost * COALESCE(account_rate_multiplier, 1.0))::numeric, 4) AS actual_cost
+        FROM usage_logs
+        WHERE created_at >= $1::date AT TIME ZONE $3
+          AND created_at < ($2::date + interval '1 day') AT TIME ZONE $3
+        GROUP BY day
+        ORDER BY day
+    """
+    try:
+        conn = await asyncpg.connect(settings.database_url)
+        try:
+            rows = await conn.fetch(sql, start, end, timezone)
+        finally:
+            await conn.close()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    trend = [
+        {
+            "date": str(row["day"]),
+            "input_tokens": row["input_tokens"],
+            "output_tokens": row["output_tokens"],
+            "cache_creation_tokens": row["cache_creation_tokens"],
+            "cache_read_tokens": row["cache_read_tokens"],
+            "requests": row["requests"],
+            "actual_cost": float(row["actual_cost"]),
+        }
+        for row in rows
+    ]
+    return {"trend": trend, "start_date": str(start), "end_date": str(end), "granularity": "day"}
 
 
 @router.get("/models")

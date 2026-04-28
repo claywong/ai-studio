@@ -180,7 +180,7 @@ function buildChartOption(item: AccountWithPlan) {
         type: 'value',
         name: '延迟(ms)',
         min: 0,
-        max: 60000,
+        max: 40000,
         nameTextStyle: { fontSize: 10, color: '#94a3b8' },
         axisLabel: { fontSize: 10, color: '#94a3b8', formatter: (v: number) => v >= 1000 ? (v / 1000) + 's' : v },
         splitLine: { lineStyle: { color: '#f1f5f9' } },

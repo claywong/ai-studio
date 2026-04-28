@@ -151,7 +151,6 @@ function buildChartOption(item: AccountWithPlan) {
   const times = sorted.map((r) => fmtTime(r.started_at))
   const successData = sorted.map((r) => (r.status === 'success' ? 1 : 0))
   const latencyData = sorted.map((r) => (r.status === 'success' && r.latency_ms != null ? +(r.latency_ms / 1000).toFixed(2) : null))
-  const ttftData = sorted.map((r) => (r.status === 'success' && r.ttft_ms != null ? +(r.ttft_ms / 1000).toFixed(2) : null))
 
   return {
     backgroundColor: 'transparent',
@@ -198,16 +197,6 @@ function buildChartOption(item: AccountWithPlan) {
         symbol: 'none',
         lineStyle: { color: '#3b82f6', width: 1.5 },
         areaStyle: { color: 'rgba(59,130,246,0.08)' },
-        connectNulls: false,
-      },
-      {
-        name: 'TTFT',
-        type: 'line',
-        data: ttftData,
-        yAxisIndex: 0,
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { color: '#f59e0b', width: 1.5, type: 'dashed' },
         connectNulls: false,
       },
       {

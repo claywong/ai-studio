@@ -4,7 +4,7 @@ import { LineChart, BarChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { searchUsers, fetchUserDailyTrend, fetchUserUsageLogs, type UserOption, type DailyTrendItem, type UsageLogItem } from '../api/userTrend'
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
@@ -115,6 +115,32 @@ async function loadUsageLogs(page = 1) {
     usageLoading.value = false
   }
 }
+
+// 刷新与定时刷新
+const AUTO_REFRESH_OPTIONS = [
+  { label: '关闭', value: 0 },
+  { label: '30秒', value: 30 },
+  { label: '1分钟', value: 60 },
+  { label: '5分钟', value: 300 },
+]
+const autoRefreshInterval = ref(0)
+let refreshTimer: ReturnType<typeof setInterval> | null = null
+
+function refreshUsageLogs() {
+  void loadUsageLogs(usagePage.value)
+}
+
+function setAutoRefresh(value: number) {
+  autoRefreshInterval.value = value
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
+  if (value > 0) {
+    refreshTimer = setInterval(refreshUsageLogs, value * 1000)
+  }
+}
+
+onBeforeUnmount(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+})
 
 function fmtTime(iso: string) {
   const d = new Date(iso)
@@ -343,6 +369,15 @@ const chartOption = computed(() => {
           <div class="card-title-row">
             <span class="card-title">使用记录</span>
             <span v-if="usageTotal" class="usage-total">共 {{ usageTotal.toLocaleString() }} 条</span>
+            <button class="refresh-btn" :disabled="usageLoading" @click="refreshUsageLogs" title="刷新">
+              <span :class="{ spinning: usageLoading }">↻</span>
+            </button>
+            <div class="auto-refresh-wrap">
+              <select class="auto-refresh-select" :value="autoRefreshInterval" @change="setAutoRefresh(+($event.target as HTMLSelectElement).value)">
+                <option v-for="opt in AUTO_REFRESH_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+              <span v-if="autoRefreshInterval > 0" class="auto-refresh-badge">自动刷新中</span>
+            </div>
           </div>
           <div v-if="usageLoading" class="center-msg sm">加载中…</div>
           <div v-else-if="usageError" class="center-msg sm error">{{ usageError }}</div>
@@ -431,9 +466,20 @@ const chartOption = computed(() => {
 .detail-table tr:last-child td { border-bottom: none; }
 .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
 
-.card-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.card-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .card-title-row .card-title { margin-bottom: 0; }
 .usage-total { font-size: 12px; color: #94a3b8; }
+
+.refresh-btn { width: 28px; height: 28px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; cursor: pointer; color: #374151; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: border-color 0.15s; }
+.refresh-btn:hover:not(:disabled) { border-color: #2563eb; color: #2563eb; }
+.refresh-btn:disabled { color: #cbd5e1; cursor: not-allowed; }
+.spinning { display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.auto-refresh-wrap { display: flex; align-items: center; gap: 6px; }
+.auto-refresh-select { padding: 4px 8px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; color: #374151; background: #fff; cursor: pointer; outline: none; }
+.auto-refresh-select:focus { border-color: #2563eb; }
+.auto-refresh-badge { font-size: 11px; color: #16a34a; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; padding: 2px 6px; }
 
 .usage-table .model-cell { font-size: 12px; color: #374151; max-width: 200px; word-break: break-all; }
 

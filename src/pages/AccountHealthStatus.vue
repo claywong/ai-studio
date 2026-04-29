@@ -40,6 +40,8 @@ const lastUpdated = ref('')
 const filterStatus = ref('')
 const filterSchedulable = ref('')
 const filterVerdict = ref('')
+const filterGroup = ref('')
+const allGroups = ref<{ id: number; name: string }[]>([])
 let timer: ReturnType<typeof setInterval> | null = null
 
 async function fetchAccounts(): Promise<AccountItem[]> {
@@ -62,6 +64,15 @@ async function load() {
   try {
     const accounts = await fetchAccounts()
     accounts.sort((a, b) => a.priority - b.priority)
+
+    // 收集所有分组
+    const groupMap = new Map<number, string>()
+    for (const a of accounts) {
+      for (const g of a.groups) groupMap.set(g.id, g.name)
+    }
+    allGroups.value = [...groupMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
 
     // 先渲染账户列表，health 异步填充
     rows.value = accounts.map((a) => ({ ...a, health: null, healthLoading: true }))
@@ -89,6 +100,10 @@ const filtered = computed(() => {
     if (filterVerdict.value) {
       const v = r.health?.verdict ?? 'OK'
       if (v !== filterVerdict.value) return false
+    }
+    if (filterGroup.value) {
+      const gid = Number(filterGroup.value)
+      if (!r.groups.some((g) => g.id === gid)) return false
     }
     return true
   })
@@ -189,6 +204,14 @@ onUnmounted(() => {
           <option value="OK">OK</option>
           <option value="StickyOnly">StickyOnly</option>
           <option value="Excluded">Excluded</option>
+        </select>
+      </div>
+
+      <div class="filter-item">
+        <span class="filter-label">分组</span>
+        <select v-model="filterGroup">
+          <option value="">全部</option>
+          <option v-for="g in allGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
         </select>
       </div>
 

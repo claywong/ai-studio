@@ -520,7 +520,7 @@ async def get_account_usage_timeline(
         SELECT
             ul.account_id,
             date_trunc($3, ul.created_at) AS time_bucket,
-            ROUND(AVG(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0))::int AS avg_ttft_ms,
+            PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0)::int AS avg_ttft_ms,
             CASE
                 WHEN SUM(ul.duration_ms) > 0
                 THEN ROUND((SUM(ul.output_tokens)::numeric / (SUM(ul.duration_ms) / 1000.0))::numeric, 2)

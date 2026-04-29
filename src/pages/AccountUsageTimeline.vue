@@ -144,7 +144,7 @@ function buildChartOption(item: AccountTimeline) {
         const time = params[0]?.name ?? ''
         const lines = params.map((p) => {
           if (p.value == null) return `${p.seriesName}: -`
-          if (p.seriesName === 'TTFT') return `TTFT: ${p.value}ms`
+          if (p.seriesName === 'TTFT p90') return `TTFT p90: ${p.value}ms`
           if (p.seriesName === 'Token/s') return `Token/s: ${p.value.toFixed(1)}`
           if (p.seriesName === '请求数') return `请求数: ${p.value}`
           return `错误: ${p.value}`
@@ -153,7 +153,7 @@ function buildChartOption(item: AccountTimeline) {
       },
     },
     legend: {
-      data: ['TTFT', 'Token/s', '请求数', '错误'],
+      data: ['TTFT p90', 'Token/s', '请求数', '错误'],
       top: 0,
       right: 8,
       itemWidth: 12,
@@ -198,7 +198,7 @@ function buildChartOption(item: AccountTimeline) {
     ],
     series: [
       {
-        name: 'TTFT',
+        name: 'TTFT p90',
         type: 'line',
         yAxisIndex: 0,
         data: ttftData,

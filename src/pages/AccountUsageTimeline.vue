@@ -131,6 +131,7 @@ function buildChartOption(item: AccountTimeline) {
   const ttftData = sorted.map((b) => b.avg_ttft_ms ?? null)
   const tpsData = sorted.map((b) => b.tokens_per_second ?? null)
   const errData = sorted.map((b) => b.error_count)
+  const reqData = sorted.map((b) => b.request_count)
 
   const labelInterval = Math.max(0, Math.floor(times.length / 5) - 1)
 
@@ -145,13 +146,14 @@ function buildChartOption(item: AccountTimeline) {
           if (p.value == null) return `${p.seriesName}: -`
           if (p.seriesName === 'TTFT') return `TTFT: ${p.value}ms`
           if (p.seriesName === 'Token/s') return `Token/s: ${p.value.toFixed(1)}`
+          if (p.seriesName === '请求数') return `请求数: ${p.value}`
           return `错误: ${p.value}`
         })
         return `${time}<br/>${lines.join('<br/>')}`
       },
     },
     legend: {
-      data: ['TTFT', 'Token/s', '错误'],
+      data: ['TTFT', 'Token/s', '请求数', '错误'],
       top: 0,
       right: 8,
       itemWidth: 12,
@@ -188,6 +190,11 @@ function buildChartOption(item: AccountTimeline) {
         min: 0,
         show: false,
       },
+      {
+        type: 'value',
+        min: 0,
+        show: false,
+      },
     ],
     series: [
       {
@@ -213,9 +220,20 @@ function buildChartOption(item: AccountTimeline) {
         connectNulls: false,
       },
       {
+        name: '请求数',
+        type: 'line',
+        yAxisIndex: 2,
+        data: reqData,
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: '#a855f7', width: 1.5 },
+        areaStyle: { color: 'rgba(168,85,247,0.06)' },
+        connectNulls: false,
+      },
+      {
         name: '错误',
         type: 'bar',
-        yAxisIndex: 2,
+        yAxisIndex: 3,
         data: errData,
         barMaxWidth: 6,
         itemStyle: { color: 'rgba(239,68,68,0.8)' },

@@ -181,24 +181,14 @@ function buildChartOption(item: AccountTimeline) {
         type: 'value',
         name: 'T/s',
         min: 0,
-        max: 50,
+        max: 100,
         position: 'right',
         nameTextStyle: { fontSize: 9, color: '#94a3b8' },
         axisLabel: { fontSize: 9, color: '#94a3b8' },
         splitLine: { show: false },
       },
-      {
-        type: 'value',
-        min: 0,
-        max: 100,
-        show: false,
-      },
-      {
-        type: 'value',
-        min: 0,
-        max: 10,
-        show: false,
-      },
+      { type: 'value', min: 0, max: 120, show: false },
+      { type: 'value', min: 0, max: 12, show: false },
     ],
     series: [
       {

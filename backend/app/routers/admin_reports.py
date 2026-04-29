@@ -497,3 +497,119 @@ async def get_user_usage_logs(
         params["end_date"] = end_date
     data = await _admin_get_simple("/admin/usage", params)
     return data
+
+
+@router.get("/account-usage-timeline")
+async def get_account_usage_timeline(
+    _: Annotated[dict, Depends(require_admin)],
+    account_ids: str = Query(..., description="逗号分隔的账号 ID"),
+    hours: int = Query(1, ge=1, le=168),
+):
+    """按账号+时间桶统计请求日志维度指标：TTFT、token 速率、错误数。"""
+    try:
+        ids = [int(x.strip()) for x in account_ids.split(",") if x.strip()]
+    except ValueError as exc:
+        raise HTTPException(400, "account_ids 格式无效") from exc
+    if not ids:
+        raise HTTPException(400, "account_ids 不能为空")
+
+    granularity = "minute" if hours <= 3 else "hour"
+    settings = get_settings()
+
+    sql_usage = """
+        SELECT
+            ul.account_id,
+            date_trunc($3, ul.created_at) AS time_bucket,
+            ROUND(AVG(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0))::int AS avg_ttft_ms,
+            CASE
+                WHEN SUM(ul.duration_ms) > 0
+                THEN ROUND((SUM(ul.output_tokens)::numeric / (SUM(ul.duration_ms) / 1000.0))::numeric, 2)
+                ELSE NULL
+            END AS tokens_per_second,
+            COUNT(*) AS request_count
+        FROM usage_logs ul
+        WHERE ul.created_at >= NOW() - ($1 || ' hours')::interval
+          AND ul.account_id = ANY($2)
+          AND ul.duration_ms > 0
+        GROUP BY ul.account_id, time_bucket
+        ORDER BY ul.account_id, time_bucket
+    """
+
+    sql_errors = """
+        SELECT
+            el.account_id,
+            date_trunc($3, el.created_at) AS time_bucket,
+            COUNT(*) AS error_count
+        FROM ops_error_logs el
+        WHERE el.created_at >= NOW() - ($1 || ' hours')::interval
+          AND el.account_id = ANY($2)
+          AND el.account_id IS NOT NULL
+        GROUP BY el.account_id, time_bucket
+        ORDER BY el.account_id, time_bucket
+    """
+
+    sql_names = "SELECT id, name FROM accounts WHERE id = ANY($1)"
+
+    try:
+        conn = await asyncpg.connect(settings.database_url)
+        try:
+            usage_rows = await conn.fetch(sql_usage, str(hours), ids, granularity)
+            error_rows = await conn.fetch(sql_errors, str(hours), ids, granularity)
+            name_rows = await conn.fetch(sql_names, ids)
+        finally:
+            await conn.close()
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+    names = {row["id"]: row["name"] or f"id={row['id']}" for row in name_rows}
+    accounts: dict[int, dict] = {}
+
+    def _ensure(aid: int) -> None:
+        if aid not in accounts:
+            accounts[aid] = {
+                "account_id": aid,
+                "account_name": names.get(aid, f"id={aid}"),
+                "buckets": {},
+            }
+
+    for row in usage_rows:
+        aid = row["account_id"]
+        _ensure(aid)
+        t = row["time_bucket"].isoformat()
+        accounts[aid]["buckets"][t] = {
+            "time": t,
+            "avg_ttft_ms": row["avg_ttft_ms"],
+            "tokens_per_second": float(row["tokens_per_second"]) if row["tokens_per_second"] is not None else None,
+            "request_count": row["request_count"],
+            "error_count": 0,
+        }
+
+    for row in error_rows:
+        aid = row["account_id"]
+        if aid is None:
+            continue
+        _ensure(aid)
+        t = row["time_bucket"].isoformat()
+        if t not in accounts[aid]["buckets"]:
+            accounts[aid]["buckets"][t] = {
+                "time": t,
+                "avg_ttft_ms": None,
+                "tokens_per_second": None,
+                "request_count": 0,
+                "error_count": 0,
+            }
+        accounts[aid]["buckets"][t]["error_count"] = row["error_count"]
+
+    result = []
+    for aid in ids:
+        if aid not in accounts:
+            continue
+        acct = accounts[aid]
+        buckets = sorted(acct["buckets"].values(), key=lambda x: x["time"])
+        result.append({
+            "account_id": aid,
+            "account_name": acct["account_name"],
+            "buckets": buckets,
+        })
+
+    return {"data": result, "hours": hours, "granularity": granularity}

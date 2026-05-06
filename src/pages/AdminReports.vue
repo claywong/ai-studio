@@ -65,7 +65,7 @@ const accountGroups = ref<AccountGroup[]>([])
 const expandedGroups = ref<Set<string>>(new Set())
 const userBreakdown = ref<UserBreakdownItem[]>([])
 const userPage = ref(1)
-const userPageSize = 20
+const userPageSize = 200
 const userPagedData = computed(() => userBreakdown.value.slice((userPage.value - 1) * userPageSize, userPage.value * userPageSize))
 const userTotalPages = computed(() => Math.ceil(userBreakdown.value.length / userPageSize))
 const lastUpdatedAt = ref('')

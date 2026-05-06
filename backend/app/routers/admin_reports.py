@@ -429,7 +429,7 @@ async def get_user_breakdown(
     start, end = _parse_dates(start_date, end_date)
     data = await _admin_get_simple(
         "/admin/dashboard/user-breakdown",
-        {"start_date": str(start), "end_date": str(end), "timezone": timezone},
+        {"start_date": str(start), "end_date": str(end), "timezone": timezone, "limit": 200},
     )
     return data
 

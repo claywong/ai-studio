@@ -19,6 +19,17 @@ class Settings(BaseSettings):
     sub2api_admin_api_key: str = ""
     database_url: str = ""
 
+    # sub2api ops error webhook
+    ops_webhook_secret: str = ""
+
+    # Anthropic SDK for LLM-based error rule judgment
+    anthropic_api_key: str = ""
+    anthropic_base_url: str = "https://api.anthropic.com"
+
+    # Feishu Bot for DM notification
+    lark_app_id: str = ""
+    lark_app_secret: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

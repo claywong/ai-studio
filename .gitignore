@@ -15,6 +15,12 @@ node_modules/
 dist/
 .vite/
 
+# generated reports
+*.csv
+*.md~
+用户使用情况报告_*.md
+account_归属地_*.md
+
 # system / editor
 .DS_Store
 .idea/

@@ -15,12 +15,18 @@ export interface UsageLogAccount {
   name: string
 }
 
+export interface UsageLogGroup {
+  id: number
+  name: string
+}
+
 export interface UsageLogItem {
   id: number
   created_at: string
   user: UsageLogUser | null
   api_key: UsageLogApiKey | null
   account: UsageLogAccount | null
+  group: UsageLogGroup | null
   model: string
   upstream_model: string | null
   session_id: string | null

@@ -448,6 +448,7 @@ onUnmounted(() => {
           <th>时间</th>
           <th>用户</th>
           <th>账号</th>
+          <th>分组</th>
           <th>模型</th>
           <th>Session ID</th>
           <th>TOKEN</th>
@@ -463,7 +464,15 @@ onUnmounted(() => {
             <td class="col-time">{{ fmtTime(item.created_at) }}</td>
             <td class="col-user">{{ item.user?.email ?? '-' }}</td>
             <td class="col-account">{{ item.account?.name ?? '-' }}</td>
-            <td class="col-model">{{ item.model }}</td>
+            <td class="col-group">{{ item.group?.name ?? '-' }}</td>
+            <td class="col-model">
+              <div class="model-cell">
+                <span class="model-name">{{ item.model }}</span>
+                <span v-if="item.upstream_model && item.upstream_model !== item.model" class="model-upstream">
+                  └ {{ item.upstream_model }}
+                </span>
+              </div>
+            </td>
             <td class="col-session">
               <span v-if="item.session_id" class="session-tag" :title="item.session_id">
                 {{ item.session_id.slice(0, 12) }}…
@@ -517,7 +526,7 @@ onUnmounted(() => {
           </tr>
 
           <tr v-if="expandedId === item.id" class="detail-row">
-            <td colspan="10">
+            <td colspan="11">
               <div class="detail-box">
                 <div class="detail-meta">
                   <span><b>Request ID:</b> {{ item.request_id ?? '-' }}</span>
@@ -922,7 +931,11 @@ input[type="text"] {
 .col-time { white-space: nowrap; color: #64748b; }
 .col-user { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-account { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-model { font-weight: 500; color: #0f172a; }
+.col-group { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b; }
+.col-model { }
+.model-cell { display: flex; flex-direction: column; gap: 1px; }
+.model-name { font-weight: 500; color: #0f172a; }
+.model-upstream { font-size: 11px; color: #64748b; padding-left: 2px; }
 .col-session { max-width: 120px; }
 .col-num { text-align: right; font-variant-numeric: tabular-nums; }
 .col-expand { text-align: center; width: 36px; }

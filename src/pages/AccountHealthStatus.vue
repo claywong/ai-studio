@@ -23,6 +23,8 @@ interface HealthStats {
   slow_rate: number
   ttft_avg_ms: number
   otps_avg: number
+  tcp_conn_ms: number
+  ttfb_ms: number
   verdict: string
   verdict_reason: string
   window_seconds: number
@@ -163,6 +165,22 @@ function ttftClass(ms: number): string {
   return 'ttft-bad'
 }
 
+function tcpConnClass(ms: number): string {
+  if (!ms) return ''
+  if (ms < 200) return 'ttft-good'
+  if (ms < 500) return 'ttft-ok'
+  if (ms < 1000) return 'ttft-warn'
+  return 'ttft-bad'
+}
+
+function ttfbClass(ms: number): string {
+  if (!ms) return ''
+  if (ms < 1000) return 'ttft-good'
+  if (ms < 3000) return 'ttft-ok'
+  if (ms < 6000) return 'ttft-warn'
+  return 'ttft-bad'
+}
+
 onMounted(() => {
   void load()
   timer = setInterval(() => void load(), 60 * 1000)
@@ -267,6 +285,8 @@ onUnmounted(() => {
           <th>请求</th>
           <th>错误</th>
           <th>错误率</th>
+          <th>TCP连接</th>
+          <th>TTFB</th>
           <th>TTFT</th>
           <th>OTPs (tok/s)</th>
           <th>原因</th>
@@ -298,6 +318,12 @@ onUnmounted(() => {
           </td>
           <td class="col-num" :class="errRateClass(row.health?.err_rate ?? 0, row.health?.req_count ?? 0)">
             {{ row.health ? (row.health.err_rate * 100).toFixed(0) + '%' : '-' }}
+          </td>
+          <td class="col-num" :class="tcpConnClass(row.health?.tcp_conn_ms ?? 0)">
+            {{ row.health ? fmtMs(row.health.tcp_conn_ms) : '-' }}
+          </td>
+          <td class="col-num" :class="ttfbClass(row.health?.ttfb_ms ?? 0)">
+            {{ row.health ? fmtMs(row.health.ttfb_ms) : '-' }}
           </td>
           <td class="col-num" :class="ttftClass(row.health?.ttft_avg_ms ?? 0)">
             {{ row.health ? fmtMs(row.health.ttft_avg_ms) : '-' }}

@@ -275,9 +275,15 @@ onUnmounted(() => {
                     <span class="arrow-out">↑</span>
                     <span class="token-val">{{ (item.output_tokens || 0).toLocaleString() }}</span>
                   </div>
-                  <div v-if="item.cache_read_tokens > 0" class="token-cache-row">
-                    <span class="cache-icon">🗃</span>
-                    <span class="cache-val">{{ fmtCacheTokens(item.cache_read_tokens) }}</span>
+                  <div v-if="item.cache_read_tokens > 0 || item.cache_creation_tokens > 0" class="token-cache-row">
+                    <template v-if="item.cache_read_tokens > 0">
+                      <span class="cache-icon">🗃</span>
+                      <span class="cache-val">{{ fmtCacheTokens(item.cache_read_tokens) }}</span>
+                    </template>
+                    <template v-if="item.cache_creation_tokens > 0">
+                      <span class="cache-create-icon">✎</span>
+                      <span class="cache-create-val">{{ fmtCacheTokens(item.cache_creation_tokens) }}</span>
+                    </template>
                   </div>
                 </div>
                 <button
@@ -380,10 +386,22 @@ onUnmounted(() => {
           <span class="tooltip-label">输出 Token</span>
           <span class="tooltip-val">{{ tokenTooltipData.output_tokens.toLocaleString() }}</span>
         </div>
-        <div v-if="tokenTooltipData.cache_creation_tokens > 0" class="tooltip-row">
-          <span class="tooltip-label">缓存写入 Token</span>
-          <span class="tooltip-val">{{ tokenTooltipData.cache_creation_tokens.toLocaleString() }}</span>
-        </div>
+        <template v-if="tokenTooltipData.cache_creation_tokens > 0">
+          <template v-if="tokenTooltipData.cache_creation_5m_tokens > 0 || tokenTooltipData.cache_creation_1h_tokens > 0">
+            <div v-if="tokenTooltipData.cache_creation_5m_tokens > 0" class="tooltip-row">
+              <span class="tooltip-label">缓存创建 <span class="badge-5m">5m</span></span>
+              <span class="tooltip-val">{{ tokenTooltipData.cache_creation_5m_tokens.toLocaleString() }}</span>
+            </div>
+            <div v-if="tokenTooltipData.cache_creation_1h_tokens > 0" class="tooltip-row">
+              <span class="tooltip-label">缓存创建 <span class="badge-1h">1h</span></span>
+              <span class="tooltip-val">{{ tokenTooltipData.cache_creation_1h_tokens.toLocaleString() }}</span>
+            </div>
+          </template>
+          <div v-else class="tooltip-row">
+            <span class="tooltip-label">缓存创建 Token</span>
+            <span class="tooltip-val">{{ tokenTooltipData.cache_creation_tokens.toLocaleString() }}</span>
+          </div>
+        </template>
         <div v-if="tokenTooltipData.cache_read_tokens > 0" class="tooltip-row">
           <span class="tooltip-label">缓存读取 Token</span>
           <span class="tooltip-val">{{ tokenTooltipData.cache_read_tokens.toLocaleString() }}</span>
@@ -598,6 +616,8 @@ input[type="number"] {
 .token-cache-row { display: flex; align-items: center; gap: 4px; }
 .cache-icon { font-size: 11px; color: #0891b2; }
 .cache-val { font-weight: 500; color: #0891b2; font-size: 12px; }
+.cache-create-icon { font-size: 11px; color: #d97706; margin-left: 4px; }
+.cache-create-val { font-weight: 500; color: #d97706; font-size: 12px; }
 
 /* 费用列 */
 .col-cost { white-space: nowrap; }
@@ -790,6 +810,18 @@ input[type="number"] {
 }
 
 .total-blue   { color: #60a5fa; font-weight: 700; }
+
+.badge-5m, .badge-1h {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  vertical-align: middle;
+}
+.badge-5m { background: rgba(251, 146, 60, 0.2); color: #fb923c; ring: 1px solid rgba(251, 146, 60, 0.3); }
+.badge-1h { background: rgba(167, 139, 250, 0.2); color: #a78bfa; ring: 1px solid rgba(167, 139, 250, 0.3); }
 .price-green  { color: #34d399; font-weight: 600; }
 .price-blue   { color: #60a5fa; font-weight: 600; }
 .price-violet { color: #c084fc; font-weight: 500; }

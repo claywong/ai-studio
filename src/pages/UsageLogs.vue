@@ -77,10 +77,14 @@ const filteredModels = computed(() => {
 
 // ── 工具函数 ──────────────────────────────────────────────
 function defaultDateRange() {
-  const end = new Date()
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  const fmt = (d: Date) => d.toISOString().slice(0, 10)
-  return { start: fmt(start), end: fmt(end) }
+  const today = new Date()
+  const fmt = (d: Date) => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  return { start: fmt(today), end: fmt(today) }
 }
 
 function fmtTime(s: string): string {

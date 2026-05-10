@@ -511,8 +511,8 @@ async def get_user_usage_logs(
 async def get_groups(
     _: Annotated[dict, Depends(require_admin)],
 ):
-    data = await _admin_get_simple("/admin/groups", {"page": 1, "page_size": 200})
-    items = data.get("items", []) if data else []
+    data = await _admin_get_raw("/admin/groups/all")
+    items = data if isinstance(data, list) else (data.get("items", []) if isinstance(data, dict) else [])
     return [{"id": g["id"], "name": g["name"]} for g in items]
 
 

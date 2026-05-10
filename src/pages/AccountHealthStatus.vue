@@ -23,8 +23,8 @@ interface HealthStats {
   slow_rate: number
   ttft_avg_ms: number
   otps_avg: number
-  tcp_conn_ms: number
-  ttfb_ms: number
+  tcp_conn_avg_ms: number
+  ttfb_avg_ms: number
   verdict: string
   verdict_reason: string
   window_seconds: number
@@ -319,11 +319,11 @@ onUnmounted(() => {
           <td class="col-num" :class="errRateClass(row.health?.err_rate ?? 0, row.health?.req_count ?? 0)">
             {{ row.health ? (row.health.err_rate * 100).toFixed(0) + '%' : '-' }}
           </td>
-          <td class="col-num" :class="tcpConnClass(row.health?.tcp_conn_ms ?? 0)">
-            {{ row.health ? fmtMs(row.health.tcp_conn_ms) : '-' }}
+          <td class="col-num" :class="tcpConnClass(row.health?.tcp_conn_avg_ms ?? 0)">
+            {{ row.health ? fmtMs(row.health.tcp_conn_avg_ms) : '-' }}
           </td>
-          <td class="col-num" :class="ttfbClass(row.health?.ttfb_ms ?? 0)">
-            {{ row.health ? fmtMs(row.health.ttfb_ms) : '-' }}
+          <td class="col-num" :class="ttfbClass(row.health?.ttfb_avg_ms ?? 0)">
+            {{ row.health ? fmtMs(row.health.ttfb_avg_ms) : '-' }}
           </td>
           <td class="col-num" :class="ttftClass(row.health?.ttft_avg_ms ?? 0)">
             {{ row.health ? fmtMs(row.health.ttft_avg_ms) : '-' }}

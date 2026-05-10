@@ -26,8 +26,18 @@ export interface UsageLogItem {
   session_id: string | null
   input_tokens: number
   output_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  input_cost: number | null
+  output_cost: number | null
+  cache_read_cost: number | null
+  cache_creation_cost: number | null
   total_cost: number
   actual_cost: number
+  account_stats_cost: number | null
+  rate_multiplier: number | null
+  account_rate_multiplier: number | null
+  service_tier: string | null
   first_token_ms: number | null
   duration_ms: number
   request_id: string | null

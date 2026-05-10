@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { fetchUsageLogs, type UsageLogItem, type UsageLogsParams } from '../api/usageLogs'
 
 // 筛选
@@ -21,7 +21,16 @@ const error = ref('')
 // 展开详情
 const expandedId = ref<number | null>(null)
 
-// 格式化时间（默认 last 24h）
+// Token tooltip
+const tokenTooltipVisible = ref(false)
+const tokenTooltipPos = ref({ x: 0, y: 0 })
+const tokenTooltipData = ref<UsageLogItem | null>(null)
+
+// 费用 tooltip
+const costTooltipVisible = ref(false)
+const costTooltipPos = ref({ x: 0, y: 0 })
+const costTooltipData = ref<UsageLogItem | null>(null)
+
 function defaultDateRange() {
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
@@ -95,18 +104,66 @@ function fmtJson(raw: string | null): string {
   }
 }
 
+function fmtCacheTokens(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
+  return String(n)
+}
+
+function totalTokens(item: UsageLogItem): number {
+  return (item.input_tokens || 0) + (item.output_tokens || 0) +
+    (item.cache_read_tokens || 0) + (item.cache_creation_tokens || 0)
+}
+
+function accountBilled(item: UsageLogItem): number {
+  const base = item.account_stats_cost != null ? item.account_stats_cost : (item.total_cost ?? 0)
+  return base * (item.account_rate_multiplier ?? 1)
+}
+
+function fmtMultiplier(v: number | null): string {
+  if (v == null) return '1.00'
+  return v.toPrecision(4)
+}
+
+function tokenPricePerMillion(cost: number | null, tokens: number): string {
+  if (!cost || !tokens) return '$0.0000'
+  return '$' + ((cost / tokens) * 1_000_000).toFixed(4)
+}
+
+// Token tooltip 显示
+function showTokenTooltip(event: MouseEvent, item: UsageLogItem) {
+  const el = event.currentTarget as HTMLElement
+  const rect = el.getBoundingClientRect()
+  tokenTooltipPos.value = { x: rect.right + 8, y: rect.top + rect.height / 2 }
+  tokenTooltipData.value = item
+  tokenTooltipVisible.value = true
+}
+
+function hideTokenTooltip() {
+  tokenTooltipVisible.value = false
+  tokenTooltipData.value = null
+}
+
+// 费用 tooltip 显示
+function showCostTooltip(event: MouseEvent, item: UsageLogItem) {
+  const el = event.currentTarget as HTMLElement
+  const rect = el.getBoundingClientRect()
+  costTooltipPos.value = { x: rect.right + 8, y: rect.top + rect.height / 2 }
+  costTooltipData.value = item
+  costTooltipVisible.value = true
+}
+
+function hideCostTooltip() {
+  costTooltipVisible.value = false
+  costTooltipData.value = null
+}
+
 function prevPage() {
-  if (page.value > 1) {
-    page.value--
-    void load()
-  }
+  if (page.value > 1) { page.value--; void load() }
 }
 
 function nextPage() {
-  if (page.value < totalPages.value) {
-    page.value++
-    void load()
-  }
+  if (page.value < totalPages.value) { page.value++; void load() }
 }
 
 function goPage(p: number) {
@@ -114,11 +171,21 @@ function goPage(p: number) {
   void load()
 }
 
+function hideAllTooltips() {
+  tokenTooltipVisible.value = false
+  costTooltipVisible.value = false
+}
+
 onMounted(() => {
   const range = defaultDateRange()
   filterStartDate.value = range.start
   filterEndDate.value = range.end
   void load()
+  document.addEventListener('scroll', hideAllTooltips, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('scroll', hideAllTooltips, true)
 })
 </script>
 
@@ -177,11 +244,10 @@ onMounted(() => {
           <th>账号</th>
           <th>模型</th>
           <th>Session ID</th>
-          <th>输入 Token</th>
-          <th>输出 Token</th>
-          <th>TTFT</th>
-          <th>耗时</th>
+          <th>TOKEN</th>
           <th>费用</th>
+          <th>首 Token</th>
+          <th>耗时</th>
           <th>详情</th>
         </tr>
       </thead>
@@ -198,17 +264,57 @@ onMounted(() => {
               </span>
               <span v-else class="muted">-</span>
             </td>
-            <td class="col-num">{{ item.input_tokens.toLocaleString() }}</td>
-            <td class="col-num">{{ item.output_tokens.toLocaleString() }}</td>
+
+            <!-- TOKEN 列 -->
+            <td class="col-token" @click.stop>
+              <div class="token-cell">
+                <div class="token-main">
+                  <div class="token-row">
+                    <span class="arrow-in">↓</span>
+                    <span class="token-val">{{ (item.input_tokens || 0).toLocaleString() }}</span>
+                    <span class="arrow-out">↑</span>
+                    <span class="token-val">{{ (item.output_tokens || 0).toLocaleString() }}</span>
+                  </div>
+                  <div v-if="item.cache_read_tokens > 0" class="token-cache-row">
+                    <span class="cache-icon">🗃</span>
+                    <span class="cache-val">{{ fmtCacheTokens(item.cache_read_tokens) }}</span>
+                  </div>
+                </div>
+                <button
+                  class="info-btn"
+                  @mouseenter="showTokenTooltip($event, item)"
+                  @mouseleave="hideTokenTooltip"
+                >ⓘ</button>
+              </div>
+            </td>
+
+            <!-- 费用列 -->
+            <td class="col-cost" @click.stop>
+              <div class="cost-cell">
+                <div class="cost-main">
+                  <div class="cost-user">${{ (item.actual_cost ?? item.total_cost ?? 0).toFixed(6) }}</div>
+                  <div v-if="item.account_rate_multiplier != null" class="cost-account">
+                    A ${{ accountBilled(item).toFixed(6) }}
+                  </div>
+                </div>
+                <button
+                  class="info-btn"
+                  @mouseenter="showCostTooltip($event, item)"
+                  @mouseleave="hideCostTooltip"
+                >ⓘ</button>
+              </div>
+            </td>
+
             <td class="col-num">{{ fmtMs(item.first_token_ms) }}</td>
             <td class="col-num">{{ fmtMs(item.duration_ms) }}</td>
-            <td class="col-num">${{ (item.actual_cost ?? item.total_cost ?? 0).toFixed(6) }}</td>
             <td class="col-expand">
               <span class="expand-icon" :class="{ open: expandedId === item.id }">▶</span>
             </td>
           </tr>
+
+          <!-- 展开详情行 -->
           <tr v-if="expandedId === item.id" class="detail-row">
-            <td colspan="11">
+            <td colspan="10">
               <div class="detail-box">
                 <div class="detail-meta">
                   <span><b>Request ID:</b> {{ item.request_id ?? '-' }}</span>
@@ -256,6 +362,105 @@ onMounted(() => {
       </select>
     </div>
   </div>
+
+  <!-- Token 详情 tooltip -->
+  <Teleport to="body">
+    <div
+      v-if="tokenTooltipVisible && tokenTooltipData"
+      class="tooltip-popup"
+      :style="{ left: tokenTooltipPos.x + 'px', top: tokenTooltipPos.y + 'px' }"
+    >
+      <div class="tooltip-inner">
+        <div class="tooltip-title">Token 明细</div>
+        <div v-if="tokenTooltipData.input_tokens > 0" class="tooltip-row">
+          <span class="tooltip-label">输入 Token</span>
+          <span class="tooltip-val">{{ tokenTooltipData.input_tokens.toLocaleString() }}</span>
+        </div>
+        <div v-if="tokenTooltipData.output_tokens > 0" class="tooltip-row">
+          <span class="tooltip-label">输出 Token</span>
+          <span class="tooltip-val">{{ tokenTooltipData.output_tokens.toLocaleString() }}</span>
+        </div>
+        <div v-if="tokenTooltipData.cache_creation_tokens > 0" class="tooltip-row">
+          <span class="tooltip-label">缓存写入 Token</span>
+          <span class="tooltip-val">{{ tokenTooltipData.cache_creation_tokens.toLocaleString() }}</span>
+        </div>
+        <div v-if="tokenTooltipData.cache_read_tokens > 0" class="tooltip-row">
+          <span class="tooltip-label">缓存读取 Token</span>
+          <span class="tooltip-val">{{ tokenTooltipData.cache_read_tokens.toLocaleString() }}</span>
+        </div>
+        <div class="tooltip-divider" />
+        <div class="tooltip-row">
+          <span class="tooltip-label">总 Token</span>
+          <span class="tooltip-val total-blue">{{ totalTokens(tokenTooltipData).toLocaleString() }}</span>
+        </div>
+      </div>
+      <div class="tooltip-arrow-left" />
+    </div>
+  </Teleport>
+
+  <!-- 费用详情 tooltip -->
+  <Teleport to="body">
+    <div
+      v-if="costTooltipVisible && costTooltipData"
+      class="tooltip-popup"
+      :style="{ left: costTooltipPos.x + 'px', top: costTooltipPos.y + 'px' }"
+    >
+      <div class="tooltip-inner">
+        <div class="tooltip-title">成本明细</div>
+        <div v-if="(costTooltipData.input_cost ?? 0) > 0" class="tooltip-row">
+          <span class="tooltip-label">输入成本</span>
+          <span class="tooltip-val">${{ (costTooltipData.input_cost ?? 0).toFixed(6) }}</span>
+        </div>
+        <div v-if="(costTooltipData.output_cost ?? 0) > 0" class="tooltip-row">
+          <span class="tooltip-label">输出成本</span>
+          <span class="tooltip-val">${{ (costTooltipData.output_cost ?? 0).toFixed(6) }}</span>
+        </div>
+        <div v-if="costTooltipData.input_tokens > 0 && (costTooltipData.input_cost ?? 0) > 0" class="tooltip-row">
+          <span class="tooltip-label">输入单价</span>
+          <span class="tooltip-val price-violet">{{ tokenPricePerMillion(costTooltipData.input_cost, costTooltipData.input_tokens) }} / 1M Token</span>
+        </div>
+        <div v-if="costTooltipData.output_tokens > 0 && (costTooltipData.output_cost ?? 0) > 0" class="tooltip-row">
+          <span class="tooltip-label">输出单价</span>
+          <span class="tooltip-val price-violet">{{ tokenPricePerMillion(costTooltipData.output_cost, costTooltipData.output_tokens) }} / 1M Token</span>
+        </div>
+        <div v-if="(costTooltipData.cache_read_cost ?? 0) > 0" class="tooltip-row">
+          <span class="tooltip-label">缓存读取成本</span>
+          <span class="tooltip-val">${{ (costTooltipData.cache_read_cost ?? 0).toFixed(6) }}</span>
+        </div>
+        <div v-if="(costTooltipData.cache_creation_cost ?? 0) > 0" class="tooltip-row">
+          <span class="tooltip-label">缓存写入成本</span>
+          <span class="tooltip-val">${{ (costTooltipData.cache_creation_cost ?? 0).toFixed(6) }}</span>
+        </div>
+        <div class="tooltip-divider" />
+        <div v-if="costTooltipData.service_tier" class="tooltip-row">
+          <span class="tooltip-label">服务档位</span>
+          <span class="tooltip-val price-cyan">{{ costTooltipData.service_tier }}</span>
+        </div>
+        <div class="tooltip-row">
+          <span class="tooltip-label">倍率</span>
+          <span class="tooltip-val price-blue">{{ fmtMultiplier(costTooltipData.rate_multiplier) }}x</span>
+        </div>
+        <div class="tooltip-row">
+          <span class="tooltip-label">原始</span>
+          <span class="tooltip-val">${{ (costTooltipData.total_cost ?? 0).toFixed(6) }}</span>
+        </div>
+        <div class="tooltip-row">
+          <span class="tooltip-label">用户扣费</span>
+          <span class="tooltip-val price-green">${{ (costTooltipData.actual_cost ?? 0).toFixed(6) }}</span>
+        </div>
+        <div v-if="costTooltipData.account_rate_multiplier != null" class="tooltip-divider" />
+        <div v-if="costTooltipData.account_rate_multiplier != null" class="tooltip-row">
+          <span class="tooltip-label">账号倍率</span>
+          <span class="tooltip-val price-blue">{{ fmtMultiplier(costTooltipData.account_rate_multiplier) }}x</span>
+        </div>
+        <div v-if="costTooltipData.account_rate_multiplier != null" class="tooltip-row">
+          <span class="tooltip-label">账号计费</span>
+          <span class="tooltip-val price-green">${{ accountBilled(costTooltipData).toFixed(6) }}</span>
+        </div>
+      </div>
+      <div class="tooltip-arrow-left" />
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -317,7 +522,6 @@ input[type="number"] {
   padding: 5px 16px;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s;
 }
 .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
 .btn-primary:disabled { opacity: 0.5; cursor: default; }
@@ -383,6 +587,45 @@ input[type="number"] {
 .col-num { text-align: right; font-variant-numeric: tabular-nums; }
 .col-expand { text-align: center; width: 36px; }
 
+/* TOKEN 列 */
+.col-token { white-space: nowrap; }
+.token-cell { display: flex; align-items: center; gap: 6px; }
+.token-main { display: flex; flex-direction: column; gap: 2px; }
+.token-row { display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.token-val { font-weight: 500; color: #0f172a; font-size: 12px; }
+.arrow-in { color: #16a34a; font-weight: 700; }
+.arrow-out { color: #7c3aed; font-weight: 700; }
+.token-cache-row { display: flex; align-items: center; gap: 4px; }
+.cache-icon { font-size: 11px; color: #0891b2; }
+.cache-val { font-weight: 500; color: #0891b2; font-size: 12px; }
+
+/* 费用列 */
+.col-cost { white-space: nowrap; }
+.cost-cell { display: flex; align-items: center; gap: 6px; }
+.cost-main { display: flex; flex-direction: column; gap: 2px; }
+.cost-user { font-weight: 600; color: #16a34a; font-variant-numeric: tabular-nums; }
+.cost-account { font-size: 11px; color: #f97316; font-variant-numeric: tabular-nums; }
+
+/* info 按钮 */
+.info-btn {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  border: none;
+  color: #94a3b8;
+  font-size: 10px;
+  cursor: help;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+.info-btn:hover { background: #bfdbfe; color: #2563eb; }
+
 .session-tag {
   display: inline-block;
   background: #ede9fe;
@@ -406,9 +649,7 @@ input[type="number"] {
 /* 详情行 */
 .detail-row td { padding: 0; background: #f8fafc; border-bottom: 1px solid #e5e9f2; }
 
-.detail-box {
-  padding: 16px 20px;
-}
+.detail-box { padding: 16px 20px; }
 
 .detail-meta {
   display: flex;
@@ -473,17 +714,12 @@ input[type="number"] {
   border-radius: 6px;
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.15s;
 }
 .pagination button:hover:not(:disabled) { background: #f1f5f9; }
 .pagination button:disabled { opacity: 0.4; cursor: default; }
 .pagination button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
-.page-ellipsis {
-  color: #94a3b8;
-  padding: 0 4px;
-  line-height: 32px;
-}
+.page-ellipsis { color: #94a3b8; padding: 0 4px; line-height: 32px; }
 
 .page-size-select {
   margin-left: 12px;
@@ -496,9 +732,78 @@ input[type="number"] {
   cursor: pointer;
 }
 
-.empty {
-  color: #94a3b8;
-  padding: 40px;
-  text-align: center;
+.empty { color: #94a3b8; padding: 40px; text-align: center; }
+</style>
+
+<!-- Tooltip 全局样式（不加 scoped，因为 Teleport 到 body） -->
+<style>
+.tooltip-popup {
+  position: fixed;
+  z-index: 9999;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.tooltip-inner {
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-width: 220px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tooltip-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d1d5db;
+  margin-bottom: 4px;
+}
+
+.tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tooltip-label {
+  font-size: 12px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.tooltip-val {
+  font-size: 12px;
+  font-weight: 500;
+  color: #f9fafb;
+  font-variant-numeric: tabular-nums;
+}
+
+.tooltip-divider {
+  height: 1px;
+  background: #374151;
+  margin: 4px 0;
+}
+
+.total-blue   { color: #60a5fa; font-weight: 700; }
+.price-green  { color: #34d399; font-weight: 600; }
+.price-blue   { color: #60a5fa; font-weight: 600; }
+.price-violet { color: #c084fc; font-weight: 500; }
+.price-cyan   { color: #22d3ee; font-weight: 600; }
+
+.tooltip-arrow-left {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 6px solid #374151;
 }
 </style>

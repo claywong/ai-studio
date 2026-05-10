@@ -507,6 +507,35 @@ async def get_user_usage_logs(
     return data
 
 
+@router.get("/usage-logs")
+async def get_usage_logs_with_content(
+    _: Annotated[dict, Depends(require_admin)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    user_id: int | None = Query(None),
+    model: str | None = Query(None),
+    session_id: str | None = Query(None),
+    account_id: int | None = Query(None),
+):
+    params: dict[str, Any] = {"page": page, "page_size": page_size, "with_content": True}
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    if user_id:
+        params["user_id"] = user_id
+    if model:
+        params["model"] = model
+    if session_id:
+        params["session_id"] = session_id
+    if account_id:
+        params["account_id"] = account_id
+    data = await _admin_get_simple("/admin/usage", params)
+    return data
+
+
 @router.get("/account-usage-timeline")
 async def get_account_usage_timeline(
     _: Annotated[dict, Depends(require_admin)],

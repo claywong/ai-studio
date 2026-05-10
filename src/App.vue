@@ -24,6 +24,7 @@ const isAdmin = computed(() => {
         <RouterLink to="/admin/account-monitor-chart">监控折线图</RouterLink>
         <RouterLink to="/admin/account-usage-timeline">请求监控</RouterLink>
         <RouterLink to="/admin/account-health">账号健康</RouterLink>
+        <RouterLink to="/admin/usage-logs">请求日志</RouterLink>
       </template>
     </nav>
     <RouterView />

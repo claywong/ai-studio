@@ -7,6 +7,7 @@ import AccountLatency from '../pages/AccountLatency.vue'
 import AccountMonitorChart from '../pages/AccountMonitorChart.vue'
 import AccountUsageTimeline from '../pages/AccountUsageTimeline.vue'
 import AccountHealthStatus from '../pages/AccountHealthStatus.vue'
+import UsageLogs from '../pages/UsageLogs.vue'
 
 const router = createRouter({
   history: createWebHistory('/app/ai/'),
@@ -46,6 +47,11 @@ const router = createRouter({
     {
       path: '/admin/account-health',
       component: AccountHealthStatus,
+      meta: { requiresAdmin: true },
+    },
+    {
+      path: '/admin/usage-logs',
+      component: UsageLogs,
       meta: { requiresAdmin: true },
     },
   ],

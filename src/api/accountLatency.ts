@@ -8,13 +8,13 @@ export interface ModelLatency {
   dur_avg: number | null
   dur_p90: number | null
   otps_avg: number | null
-  otps_p90: number | null
+  otps_p10: number | null
   recent_requests: number
   recent_ttft_avg: number | null
   recent_ttft_p90: number | null
   recent_dur_avg: number | null
   recent_otps_avg: number | null
-  recent_otps_p90: number | null
+  recent_otps_p10: number | null
 }
 
 export interface AccountLatency {

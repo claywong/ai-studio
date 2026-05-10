@@ -307,9 +307,9 @@ async def get_account_latency(
             ROUND(AVG(r.duration_ms))::int                                                   AS dur_avg,
             PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY r.duration_ms)::int                 AS dur_p90,
             ROUND(AVG(r.otps) FILTER (WHERE r.otps IS NOT NULL)::numeric, 2)                AS otps_avg,
-            ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (
+            ROUND(PERCENTILE_CONT(0.1) WITHIN GROUP (
                 ORDER BY CASE WHEN r.otps IS NOT NULL THEN r.otps END
-            )::numeric, 2)                                                                   AS otps_p90,
+            )::numeric, 2)                                                                   AS otps_p10,
             COUNT(rc.account_id)                                                             AS recent_requests,
             ROUND(AVG(rc.first_token_ms) FILTER (WHERE rc.first_token_ms > 0))::int         AS recent_ttft_avg,
             PERCENTILE_CONT(0.9) WITHIN GROUP (
@@ -317,9 +317,9 @@ async def get_account_latency(
             )::int                                                                           AS recent_ttft_p90,
             ROUND(AVG(rc.duration_ms))::int                                                  AS recent_dur_avg,
             ROUND(AVG(rc.otps) FILTER (WHERE rc.otps IS NOT NULL)::numeric, 2)              AS recent_otps_avg,
-            ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (
+            ROUND(PERCENTILE_CONT(0.1) WITHIN GROUP (
                 ORDER BY CASE WHEN rc.otps IS NOT NULL THEN rc.otps END
-            )::numeric, 2)                                                                   AS recent_otps_p90
+            )::numeric, 2)                                                                   AS recent_otps_p10
         FROM ranked r
         LEFT JOIN recent rc ON rc.account_id = r.account_id AND rc.model = r.model
         WHERE r.rn <= $1
@@ -355,13 +355,13 @@ async def get_account_latency(
             "dur_avg": row["dur_avg"],
             "dur_p90": row["dur_p90"],
             "otps_avg": float(row["otps_avg"]) if row["otps_avg"] is not None else None,
-            "otps_p90": float(row["otps_p90"]) if row["otps_p90"] is not None else None,
+            "otps_p10": float(row["otps_p10"]) if row["otps_p10"] is not None else None,
             "recent_requests": row["recent_requests"],
             "recent_ttft_avg": row["recent_ttft_avg"],
             "recent_ttft_p90": row["recent_ttft_p90"],
             "recent_dur_avg": row["recent_dur_avg"],
             "recent_otps_avg": float(row["recent_otps_avg"]) if row["recent_otps_avg"] is not None else None,
-            "recent_otps_p90": float(row["recent_otps_p90"]) if row["recent_otps_p90"] is not None else None,
+            "recent_otps_p10": float(row["recent_otps_p10"]) if row["recent_otps_p10"] is not None else None,
         })
 
     # 按组聚合，组内账号已按请求数降序（SQL 保证），组本身也按总请求数降序

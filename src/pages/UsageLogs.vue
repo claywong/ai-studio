@@ -1,88 +1,86 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
-import { fetchUsageLogs, type UsageLogItem, type UsageLogsParams } from '../api/usageLogs'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
+import {
+  fetchUsageLogs, searchUsers, fetchAccounts, fetchGroups, fetchModels,
+  type UsageLogItem, type UsageLogsParams,
+  type UserOption, type AccountOption, type GroupOption,
+} from '../api/usageLogs'
 
-// 筛选
+// ── 筛选状态 ──────────────────────────────────────────────
 const filterStartDate = ref('')
 const filterEndDate = ref('')
-const filterUserId = ref('')
-const filterModel = ref('')
 const filterSessionId = ref('')
-const filterAccountId = ref('')
 
-// 列表状态
+// 用户搜索下拉
+const userKeyword = ref('')
+const userOptions = ref<UserOption[]>([])
+const userSelected = ref<UserOption | null>(null)
+const userDropOpen = ref(false)
+const userSearching = ref(false)
+let userSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+// 账号下拉（全量，本地过滤）
+const accountKeyword = ref('')
+const accountOptions = ref<AccountOption[]>([])
+const accountSelected = ref<AccountOption | null>(null)
+const accountDropOpen = ref(false)
+
+// 分组下拉
+const groupOptions = ref<GroupOption[]>([])
+const groupSelected = ref<GroupOption | null>(null)
+const groupDropOpen = ref(false)
+const groupKeyword = ref('')
+
+// 模型下拉
+const modelOptions = ref<string[]>([])
+const modelSelected = ref('')
+const modelDropOpen = ref(false)
+const modelKeyword = ref('')
+
+// ── 列表状态 ──────────────────────────────────────────────
 const items = ref<UsageLogItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
 const error = ref('')
-
-// 展开详情
 const expandedId = ref<number | null>(null)
 
-// Token tooltip
+// ── Tooltip ───────────────────────────────────────────────
 const tokenTooltipVisible = ref(false)
 const tokenTooltipPos = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<UsageLogItem | null>(null)
-
-// 费用 tooltip
 const costTooltipVisible = ref(false)
 const costTooltipPos = ref({ x: 0, y: 0 })
 const costTooltipData = ref<UsageLogItem | null>(null)
 
+// ── 计算 ──────────────────────────────────────────────────
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+
+const filteredAccounts = computed(() => {
+  const kw = accountKeyword.value.trim().toLowerCase()
+  if (!kw) return accountOptions.value
+  return accountOptions.value.filter(a => a.name.toLowerCase().includes(kw))
+})
+
+const filteredGroups = computed(() => {
+  const kw = groupKeyword.value.trim().toLowerCase()
+  if (!kw) return groupOptions.value
+  return groupOptions.value.filter(g => g.name.toLowerCase().includes(kw))
+})
+
+const filteredModels = computed(() => {
+  const kw = modelKeyword.value.trim().toLowerCase()
+  if (!kw) return modelOptions.value
+  return modelOptions.value.filter(m => m.toLowerCase().includes(kw))
+})
+
+// ── 工具函数 ──────────────────────────────────────────────
 function defaultDateRange() {
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
   const fmt = (d: Date) => d.toISOString().slice(0, 10)
   return { start: fmt(start), end: fmt(end) }
-}
-
-const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
-
-async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const params: UsageLogsParams = {
-      page: page.value,
-      page_size: pageSize.value,
-      start_date: filterStartDate.value || undefined,
-      end_date: filterEndDate.value || undefined,
-      user_id: filterUserId.value ? Number(filterUserId.value) : undefined,
-      model: filterModel.value || undefined,
-      session_id: filterSessionId.value || undefined,
-      account_id: filterAccountId.value ? Number(filterAccountId.value) : undefined,
-    }
-    const res = await fetchUsageLogs(params)
-    items.value = (res as any)?.items ?? []
-    total.value = (res as any)?.total ?? 0
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    loading.value = false
-  }
-}
-
-function search() {
-  page.value = 1
-  void load()
-}
-
-function reset() {
-  const range = defaultDateRange()
-  filterStartDate.value = range.start
-  filterEndDate.value = range.end
-  filterUserId.value = ''
-  filterModel.value = ''
-  filterSessionId.value = ''
-  filterAccountId.value = ''
-  page.value = 1
-  void load()
-}
-
-function toggleExpand(item: UsageLogItem) {
-  expandedId.value = expandedId.value === item.id ? null : item.id
 }
 
 function fmtTime(s: string): string {
@@ -97,11 +95,7 @@ function fmtMs(ms: number | null): string {
 
 function fmtJson(raw: string | null): string {
   if (!raw) return ''
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
-  } catch {
-    return raw
-  }
+  try { return JSON.stringify(JSON.parse(raw), null, 2) } catch { return raw }
 }
 
 function fmtCacheTokens(n: number): string {
@@ -130,45 +124,161 @@ function tokenPricePerMillion(cost: number | null, tokens: number): string {
   return '$' + ((cost / tokens) * 1_000_000).toFixed(4)
 }
 
-// Token tooltip 显示
+// ── 加载数据 ──────────────────────────────────────────────
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    const params: UsageLogsParams = {
+      page: page.value,
+      page_size: pageSize.value,
+      start_date: filterStartDate.value || undefined,
+      end_date: filterEndDate.value || undefined,
+      user_id: userSelected.value?.id,
+      model: modelSelected.value || undefined,
+      session_id: filterSessionId.value || undefined,
+      account_id: accountSelected.value?.id,
+      group_id: groupSelected.value?.id,
+    }
+    const res = await fetchUsageLogs(params)
+    items.value = (res as any)?.items ?? []
+    total.value = (res as any)?.total ?? 0
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadOptions() {
+  const [accs, grps, mods] = await Promise.all([
+    fetchAccounts().catch(() => []),
+    fetchGroups().catch(() => []),
+    fetchModels().catch(() => ({ models: [] })),
+  ])
+  accountOptions.value = accs
+  groupOptions.value = grps
+  modelOptions.value = (mods as any)?.models?.map((m: any) => m.model).filter(Boolean) ?? []
+}
+
+function search() {
+  page.value = 1
+  void load()
+}
+
+function reset() {
+  const range = defaultDateRange()
+  filterStartDate.value = range.start
+  filterEndDate.value = range.end
+  filterSessionId.value = ''
+  userKeyword.value = ''
+  userSelected.value = null
+  userOptions.value = []
+  accountKeyword.value = ''
+  accountSelected.value = null
+  groupSelected.value = null
+  groupKeyword.value = ''
+  modelSelected.value = ''
+  modelKeyword.value = ''
+  page.value = 1
+  void load()
+}
+
+// ── 用户搜索 ──────────────────────────────────────────────
+function onUserInput() {
+  userSelected.value = null
+  if (userSearchTimer) clearTimeout(userSearchTimer)
+  userSearchTimer = setTimeout(async () => {
+    const kw = userKeyword.value.trim()
+    if (!kw) { userOptions.value = []; return }
+    userSearching.value = true
+    userOptions.value = await searchUsers(kw).catch(() => [])
+    userSearching.value = false
+    userDropOpen.value = true
+  }, 300)
+}
+
+function selectUser(u: UserOption) {
+  userSelected.value = u
+  userKeyword.value = u.email
+  userDropOpen.value = false
+}
+
+function clearUser() {
+  userSelected.value = null
+  userKeyword.value = ''
+  userOptions.value = []
+}
+
+// ── 账号选择 ──────────────────────────────────────────────
+function selectAccount(a: AccountOption) {
+  accountSelected.value = a
+  accountKeyword.value = a.name
+  accountDropOpen.value = false
+}
+
+function clearAccount() {
+  accountSelected.value = null
+  accountKeyword.value = ''
+}
+
+// ── 分组选择 ──────────────────────────────────────────────
+function selectGroup(g: GroupOption | null) {
+  groupSelected.value = g
+  groupDropOpen.value = false
+  groupKeyword.value = ''
+}
+
+// ── 模型选择 ──────────────────────────────────────────────
+function selectModel(m: string) {
+  modelSelected.value = m
+  modelDropOpen.value = false
+  modelKeyword.value = ''
+}
+
+function clearModel() {
+  modelSelected.value = ''
+  modelKeyword.value = ''
+}
+
+// ── 展开详情 ──────────────────────────────────────────────
+function toggleExpand(item: UsageLogItem) {
+  expandedId.value = expandedId.value === item.id ? null : item.id
+}
+
+// ── Token tooltip ─────────────────────────────────────────
 function showTokenTooltip(event: MouseEvent, item: UsageLogItem) {
-  const el = event.currentTarget as HTMLElement
-  const rect = el.getBoundingClientRect()
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   tokenTooltipPos.value = { x: rect.right + 8, y: rect.top + rect.height / 2 }
   tokenTooltipData.value = item
   tokenTooltipVisible.value = true
 }
+function hideTokenTooltip() { tokenTooltipVisible.value = false; tokenTooltipData.value = null }
 
-function hideTokenTooltip() {
-  tokenTooltipVisible.value = false
-  tokenTooltipData.value = null
-}
-
-// 费用 tooltip 显示
+// ── 费用 tooltip ──────────────────────────────────────────
 function showCostTooltip(event: MouseEvent, item: UsageLogItem) {
-  const el = event.currentTarget as HTMLElement
-  const rect = el.getBoundingClientRect()
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   costTooltipPos.value = { x: rect.right + 8, y: rect.top + rect.height / 2 }
   costTooltipData.value = item
   costTooltipVisible.value = true
 }
+function hideCostTooltip() { costTooltipVisible.value = false; costTooltipData.value = null }
 
-function hideCostTooltip() {
-  costTooltipVisible.value = false
-  costTooltipData.value = null
-}
+// ── 分页 ──────────────────────────────────────────────────
+function prevPage() { if (page.value > 1) { page.value--; void load() } }
+function nextPage() { if (page.value < totalPages.value) { page.value++; void load() } }
+function goPage(p: number) { page.value = p; void load() }
+function onPageSizeChange() { page.value = 1; void load() }
 
-function prevPage() {
-  if (page.value > 1) { page.value--; void load() }
-}
-
-function nextPage() {
-  if (page.value < totalPages.value) { page.value++; void load() }
-}
-
-function goPage(p: number) {
-  page.value = p
-  void load()
+// ── 关闭下拉（点击外部）──────────────────────────────────
+function onDocClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.dropdown-wrap')) {
+    userDropOpen.value = false
+    accountDropOpen.value = false
+    groupDropOpen.value = false
+    modelDropOpen.value = false
+  }
 }
 
 function hideAllTooltips() {
@@ -181,59 +291,155 @@ onMounted(() => {
   filterStartDate.value = range.start
   filterEndDate.value = range.end
   void load()
+  void loadOptions()
+  document.addEventListener('click', onDocClick)
   document.addEventListener('scroll', hideAllTooltips, true)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
   document.removeEventListener('scroll', hideAllTooltips, true)
 })
 </script>
 
 <template>
   <div class="page">
-    <div class="toolbar">
-      <span class="title">请求日志</span>
+    <!-- 筛选区：两行 -->
+    <div class="filter-box">
+      <!-- 第一行 -->
+      <div class="filter-row">
+        <div class="filter-item">
+          <span class="filter-label">开始日期</span>
+          <input type="date" v-model="filterStartDate" />
+        </div>
+        <div class="filter-item">
+          <span class="filter-label">结束日期</span>
+          <input type="date" v-model="filterEndDate" />
+        </div>
 
-      <div class="filter-item">
-        <span class="filter-label">开始日期</span>
-        <input type="date" v-model="filterStartDate" />
+        <!-- 用户搜索 -->
+        <div class="filter-item dropdown-wrap">
+          <span class="filter-label">用户</span>
+          <div class="search-select" :class="{ active: userDropOpen }">
+            <input
+              v-model="userKeyword"
+              placeholder="搜索邮箱…"
+              @input="onUserInput"
+              @focus="userDropOpen = userOptions.length > 0"
+              class="search-input"
+            />
+            <span v-if="userSelected" class="clear-btn" @click.stop="clearUser">×</span>
+            <div v-if="userDropOpen && (userOptions.length > 0 || userSearching)" class="drop-menu">
+              <div v-if="userSearching" class="drop-loading">搜索中…</div>
+              <div
+                v-for="u in userOptions" :key="u.id"
+                class="drop-item"
+                :class="{ selected: userSelected?.id === u.id }"
+                @click.stop="selectUser(u)"
+              >{{ u.email }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 账号下拉 -->
+        <div class="filter-item dropdown-wrap">
+          <span class="filter-label">账号</span>
+          <div class="search-select" :class="{ active: accountDropOpen }">
+            <input
+              v-model="accountKeyword"
+              placeholder="搜索账号…"
+              @focus="accountDropOpen = true"
+              @input="accountSelected = null"
+              class="search-input"
+            />
+            <span v-if="accountSelected" class="clear-btn" @click.stop="clearAccount">×</span>
+            <div v-if="accountDropOpen" class="drop-menu">
+              <div
+                v-for="a in filteredAccounts" :key="a.id"
+                class="drop-item"
+                :class="{ selected: accountSelected?.id === a.id }"
+                @click.stop="selectAccount(a)"
+              >{{ a.name }}</div>
+              <div v-if="filteredAccounts.length === 0" class="drop-empty">无匹配</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-item">
+          <span class="filter-label">Session ID</span>
+          <input type="text" v-model="filterSessionId" placeholder="可选" class="input-lg" />
+        </div>
       </div>
 
-      <div class="filter-item">
-        <span class="filter-label">结束日期</span>
-        <input type="date" v-model="filterEndDate" />
-      </div>
+      <!-- 第二行 -->
+      <div class="filter-row">
+        <!-- 分组下拉 -->
+        <div class="filter-item dropdown-wrap">
+          <span class="filter-label">分组</span>
+          <div class="search-select" :class="{ active: groupDropOpen }">
+            <div class="select-display" @click.stop="groupDropOpen = !groupDropOpen">
+              <span :class="groupSelected ? 'selected-text' : 'placeholder-text'">
+                {{ groupSelected ? groupSelected.name : '全部分组' }}
+              </span>
+              <span class="drop-arrow">{{ groupDropOpen ? '∧' : '∨' }}</span>
+            </div>
+            <div v-if="groupDropOpen" class="drop-menu">
+              <div class="drop-search">
+                <input v-model="groupKeyword" placeholder="搜索…" class="drop-search-input" @click.stop />
+              </div>
+              <div class="drop-item" :class="{ selected: !groupSelected }" @click.stop="selectGroup(null)">
+                全部分组
+              </div>
+              <div
+                v-for="g in filteredGroups" :key="g.id"
+                class="drop-item"
+                :class="{ selected: groupSelected?.id === g.id }"
+                @click.stop="selectGroup(g)"
+              >{{ g.name }}</div>
+              <div v-if="filteredGroups.length === 0" class="drop-empty">无匹配</div>
+            </div>
+          </div>
+        </div>
 
-      <div class="filter-item">
-        <span class="filter-label">用户 ID</span>
-        <input type="number" v-model="filterUserId" placeholder="可选" class="input-sm" />
-      </div>
+        <!-- 模型下拉 -->
+        <div class="filter-item dropdown-wrap">
+          <span class="filter-label">模型</span>
+          <div class="search-select" :class="{ active: modelDropOpen }">
+            <div class="select-display" @click.stop="modelDropOpen = !modelDropOpen">
+              <span :class="modelSelected ? 'selected-text' : 'placeholder-text'">
+                {{ modelSelected || '全部模型' }}
+              </span>
+              <span v-if="modelSelected" class="clear-btn-inline" @click.stop="clearModel">×</span>
+              <span v-else class="drop-arrow">{{ modelDropOpen ? '∧' : '∨' }}</span>
+            </div>
+            <div v-if="modelDropOpen" class="drop-menu drop-menu-lg">
+              <div class="drop-search">
+                <input v-model="modelKeyword" placeholder="搜索模型…" class="drop-search-input" @click.stop />
+              </div>
+              <div
+                v-for="m in filteredModels" :key="m"
+                class="drop-item"
+                :class="{ selected: modelSelected === m }"
+                @click.stop="selectModel(m)"
+              >{{ m }}</div>
+              <div v-if="filteredModels.length === 0" class="drop-empty">无匹配</div>
+            </div>
+          </div>
+        </div>
 
-      <div class="filter-item">
-        <span class="filter-label">账号 ID</span>
-        <input type="number" v-model="filterAccountId" placeholder="可选" class="input-sm" />
+        <div class="filter-actions">
+          <button class="btn-primary" :disabled="loading" @click="search">
+            {{ loading ? '加载中…' : '查询' }}
+          </button>
+          <button class="btn-secondary" @click="reset">重置</button>
+        </div>
       </div>
-
-      <div class="filter-item">
-        <span class="filter-label">模型</span>
-        <input type="text" v-model="filterModel" placeholder="可选" class="input-md" />
-      </div>
-
-      <div class="filter-item">
-        <span class="filter-label">Session ID</span>
-        <input type="text" v-model="filterSessionId" placeholder="可选" class="input-lg" />
-      </div>
-
-      <button class="btn-primary" :disabled="loading" @click="search">
-        {{ loading ? '加载中…' : '查询' }}
-      </button>
-      <button class="btn-secondary" @click="reset">重置</button>
     </div>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
 
     <div class="total-info" v-if="!loading">
-      共 {{ total }} 条记录，第 {{ page }} / {{ totalPages || 1 }} 页
+      共 {{ total }} 条记录
     </div>
 
     <table v-if="items.length > 0" class="log-table">
@@ -286,11 +492,7 @@ onUnmounted(() => {
                     </template>
                   </div>
                 </div>
-                <button
-                  class="info-btn"
-                  @mouseenter="showTokenTooltip($event, item)"
-                  @mouseleave="hideTokenTooltip"
-                >ⓘ</button>
+                <button class="info-btn" @mouseenter="showTokenTooltip($event, item)" @mouseleave="hideTokenTooltip">ⓘ</button>
               </div>
             </td>
 
@@ -303,11 +505,7 @@ onUnmounted(() => {
                     A ${{ accountBilled(item).toFixed(6) }}
                   </div>
                 </div>
-                <button
-                  class="info-btn"
-                  @mouseenter="showCostTooltip($event, item)"
-                  @mouseleave="hideCostTooltip"
-                >ⓘ</button>
+                <button class="info-btn" @mouseenter="showCostTooltip($event, item)" @mouseleave="hideCostTooltip">ⓘ</button>
               </div>
             </td>
 
@@ -318,7 +516,6 @@ onUnmounted(() => {
             </td>
           </tr>
 
-          <!-- 展开详情行 -->
           <tr v-if="expandedId === item.id" class="detail-row">
             <td colspan="10">
               <div class="detail-box">
@@ -348,20 +545,21 @@ onUnmounted(() => {
     <div v-else-if="!loading" class="empty">没有符合条件的记录</div>
 
     <!-- 分页 -->
-    <div v-if="total > pageSize" class="pagination">
-      <button :disabled="page <= 1" @click="prevPage">上一页</button>
-      <template v-for="p in totalPages" :key="p">
-        <button
-          v-if="p === 1 || p === totalPages || Math.abs(p - page) <= 2"
-          :class="{ active: p === page }"
-          @click="goPage(p)"
-        >{{ p }}</button>
-        <span v-else-if="p === 2 && page > 4" class="page-ellipsis">…</span>
-        <span v-else-if="p === totalPages - 1 && page < totalPages - 3" class="page-ellipsis">…</span>
-      </template>
-      <button :disabled="page >= totalPages" @click="nextPage">下一页</button>
-
-      <select class="page-size-select" v-model.number="pageSize" @change="search">
+    <div v-if="total > 0" class="pagination-bar">
+      <div class="pagination">
+        <button :disabled="page <= 1" @click="prevPage">上一页</button>
+        <template v-for="p in totalPages" :key="p">
+          <button
+            v-if="p === 1 || p === totalPages || Math.abs(p - page) <= 2"
+            :class="{ active: p === page }"
+            @click="goPage(p)"
+          >{{ p }}</button>
+          <span v-else-if="p === 2 && page > 4" class="page-ellipsis">…</span>
+          <span v-else-if="p === totalPages - 1 && page < totalPages - 3" class="page-ellipsis">…</span>
+        </template>
+        <button :disabled="page >= totalPages" @click="nextPage">下一页</button>
+      </div>
+      <select class="page-size-select" v-model.number="pageSize" @change="onPageSizeChange">
         <option :value="20">20条/页</option>
         <option :value="50">50条/页</option>
         <option :value="100">100条/页</option>
@@ -466,15 +664,17 @@ onUnmounted(() => {
           <span class="tooltip-label">用户扣费</span>
           <span class="tooltip-val price-green">${{ (costTooltipData.actual_cost ?? 0).toFixed(6) }}</span>
         </div>
-        <div v-if="costTooltipData.account_rate_multiplier != null" class="tooltip-divider" />
-        <div v-if="costTooltipData.account_rate_multiplier != null" class="tooltip-row">
-          <span class="tooltip-label">账号倍率</span>
-          <span class="tooltip-val price-blue">{{ fmtMultiplier(costTooltipData.account_rate_multiplier) }}x</span>
-        </div>
-        <div v-if="costTooltipData.account_rate_multiplier != null" class="tooltip-row">
-          <span class="tooltip-label">账号计费</span>
-          <span class="tooltip-val price-green">${{ accountBilled(costTooltipData).toFixed(6) }}</span>
-        </div>
+        <template v-if="costTooltipData.account_rate_multiplier != null">
+          <div class="tooltip-divider" />
+          <div class="tooltip-row">
+            <span class="tooltip-label">账号倍率</span>
+            <span class="tooltip-val price-blue">{{ fmtMultiplier(costTooltipData.account_rate_multiplier) }}x</span>
+          </div>
+          <div class="tooltip-row">
+            <span class="tooltip-label">账号计费</span>
+            <span class="tooltip-val price-green">${{ accountBilled(costTooltipData).toFixed(6) }}</span>
+          </div>
+        </template>
       </div>
       <div class="tooltip-arrow-left" />
     </div>
@@ -490,25 +690,30 @@ onUnmounted(() => {
   background: #f8fafc;
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+/* 筛选区 */
+.filter-box {
+  background: #fff;
+  border: 1px solid #e5e9f2;
+  border-radius: 10px;
+  padding: 14px 16px;
   margin-bottom: 16px;
-  flex-wrap: wrap;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-right: 8px;
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .filter-item {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  position: relative;
 }
 
 .filter-label {
@@ -517,27 +722,143 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.filter-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
 input[type="date"],
-input[type="text"],
-input[type="number"] {
+input[type="text"] {
   background: #fff;
   border: 1px solid #e2e8f0;
   color: #334155;
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 5px 8px;
   font-size: 12px;
 }
 
-.input-sm { width: 80px; }
-.input-md { width: 120px; }
 .input-lg { width: 200px; }
+
+/* 搜索下拉组件 */
+.search-select {
+  position: relative;
+  width: 180px;
+}
+
+.search-input {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 28px 5px 8px;
+  font-size: 12px;
+  color: #334155;
+  box-sizing: border-box;
+}
+
+.search-select.active .search-input,
+.search-select.active .select-display {
+  border-color: #2563eb;
+  outline: none;
+}
+
+.select-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 30px;
+}
+
+.placeholder-text { color: #94a3b8; }
+.selected-text { color: #334155; font-weight: 500; }
+.drop-arrow { color: #94a3b8; font-size: 10px; margin-left: 4px; }
+
+.clear-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+.clear-btn:hover { color: #475569; }
+
+.clear-btn-inline {
+  color: #94a3b8;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.clear-btn-inline:hover { color: #475569; }
+
+.drop-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+  min-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.drop-menu-lg { width: 280px; }
+
+.drop-search {
+  padding: 6px 8px 4px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.drop-search-input {
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #334155;
+  box-sizing: border-box;
+}
+
+.drop-item {
+  padding: 7px 12px;
+  font-size: 12px;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drop-item:hover { background: #f1f5f9; }
+.drop-item.selected { background: #eff6ff; color: #2563eb; font-weight: 500; }
+
+.drop-loading, .drop-empty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+}
 
 .btn-primary {
   background: #2563eb;
   color: #fff;
   border: none;
   border-radius: 6px;
-  padding: 5px 16px;
+  padding: 6px 18px;
   font-size: 12px;
   cursor: pointer;
 }
@@ -549,7 +870,7 @@ input[type="number"] {
   color: #475569;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
-  padding: 5px 14px;
+  padding: 6px 16px;
   font-size: 12px;
   cursor: pointer;
 }
@@ -563,6 +884,7 @@ input[type="number"] {
   margin-bottom: 10px;
 }
 
+/* 表格 */
 .log-table {
   width: 100%;
   border-collapse: collapse;
@@ -605,7 +927,6 @@ input[type="number"] {
 .col-num { text-align: right; font-variant-numeric: tabular-nums; }
 .col-expand { text-align: center; width: 36px; }
 
-/* TOKEN 列 */
 .col-token { white-space: nowrap; }
 .token-cell { display: flex; align-items: center; gap: 6px; }
 .token-main { display: flex; flex-direction: column; gap: 2px; }
@@ -619,14 +940,12 @@ input[type="number"] {
 .cache-create-icon { font-size: 11px; color: #d97706; margin-left: 4px; }
 .cache-create-val { font-weight: 500; color: #d97706; font-size: 12px; }
 
-/* 费用列 */
 .col-cost { white-space: nowrap; }
 .cost-cell { display: flex; align-items: center; gap: 6px; }
 .cost-main { display: flex; flex-direction: column; gap: 2px; }
 .cost-user { font-weight: 600; color: #16a34a; font-variant-numeric: tabular-nums; }
 .cost-account { font-size: 11px; color: #f97316; font-variant-numeric: tabular-nums; }
 
-/* info 按钮 */
 .info-btn {
   flex-shrink: 0;
   width: 16px;
@@ -666,62 +985,36 @@ input[type="number"] {
 }
 .expand-icon.open { transform: rotate(90deg); }
 
-/* 详情行 */
 .detail-row td { padding: 0; background: #f8fafc; border-bottom: 1px solid #e5e9f2; }
-
 .detail-box { padding: 16px 20px; }
+.detail-meta { display: flex; gap: 24px; margin-bottom: 12px; font-size: 12px; color: #475569; flex-wrap: wrap; }
 
-.detail-meta {
-  display: flex;
-  gap: 24px;
-  margin-bottom: 12px;
-  font-size: 12px;
-  color: #475569;
-  flex-wrap: wrap;
-}
-
-.body-panels {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.body-panel {
-  background: #1e293b;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
+.body-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.body-panel { background: #1e293b; border-radius: 8px; overflow: hidden; }
 .panel-title {
-  background: #334155;
-  color: #94a3b8;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 6px 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  background: #334155; color: #94a3b8; font-size: 11px; font-weight: 600;
+  padding: 6px 12px; text-transform: uppercase; letter-spacing: 0.05em;
 }
-
 .body-pre {
   color: #e2e8f0;
   font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
-  font-size: 11px;
-  line-height: 1.6;
-  padding: 12px;
-  margin: 0;
-  max-height: 400px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
+  font-size: 11px; line-height: 1.6; padding: 12px; margin: 0;
+  max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
 }
 
 /* 分页 */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
 .pagination {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 16px;
-  justify-content: center;
 }
 
 .pagination button {
@@ -742,20 +1035,19 @@ input[type="number"] {
 .page-ellipsis { color: #94a3b8; padding: 0 4px; line-height: 32px; }
 
 .page-size-select {
-  margin-left: 12px;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 5px 8px;
   font-size: 12px;
   background: #fff;
   color: #475569;
   cursor: pointer;
+  height: 32px;
 }
 
 .empty { color: #94a3b8; padding: 40px; text-align: center; }
 </style>
 
-<!-- Tooltip 全局样式（不加 scoped，因为 Teleport 到 body） -->
 <style>
 .tooltip-popup {
   position: fixed;
@@ -770,58 +1062,23 @@ input[type="number"] {
   border-radius: 10px;
   padding: 10px 14px;
   min-width: 220px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
 
-.tooltip-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #d1d5db;
-  margin-bottom: 4px;
-}
+.tooltip-title { font-size: 12px; font-weight: 600; color: #d1d5db; margin-bottom: 4px; }
 
-.tooltip-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
+.tooltip-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 
-.tooltip-label {
-  font-size: 12px;
-  color: #9ca3af;
-  white-space: nowrap;
-}
+.tooltip-label { font-size: 12px; color: #9ca3af; white-space: nowrap; }
 
-.tooltip-val {
-  font-size: 12px;
-  font-weight: 500;
-  color: #f9fafb;
-  font-variant-numeric: tabular-nums;
-}
+.tooltip-val { font-size: 12px; font-weight: 500; color: #f9fafb; font-variant-numeric: tabular-nums; }
 
-.tooltip-divider {
-  height: 1px;
-  background: #374151;
-  margin: 4px 0;
-}
+.tooltip-divider { height: 1px; background: #374151; margin: 4px 0; }
 
 .total-blue   { color: #60a5fa; font-weight: 700; }
-
-.badge-5m, .badge-1h {
-  display: inline-block;
-  padding: 0 5px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.5;
-  vertical-align: middle;
-}
-.badge-5m { background: rgba(251, 146, 60, 0.2); color: #fb923c; ring: 1px solid rgba(251, 146, 60, 0.3); }
-.badge-1h { background: rgba(167, 139, 250, 0.2); color: #a78bfa; ring: 1px solid rgba(167, 139, 250, 0.3); }
 .price-green  { color: #34d399; font-weight: 600; }
 .price-blue   { color: #60a5fa; font-weight: 600; }
 .price-violet { color: #c084fc; font-weight: 500; }
@@ -832,10 +1089,21 @@ input[type="number"] {
   right: 100%;
   top: 50%;
   transform: translateY(-50%);
-  width: 0;
-  height: 0;
+  width: 0; height: 0;
   border-top: 6px solid transparent;
   border-bottom: 6px solid transparent;
   border-right: 6px solid #374151;
 }
+
+.badge-5m, .badge-1h {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  vertical-align: middle;
+}
+.badge-5m { background: rgba(251,146,60,0.2); color: #fb923c; }
+.badge-1h  { background: rgba(167,139,250,0.2); color: #a78bfa; }
 </style>

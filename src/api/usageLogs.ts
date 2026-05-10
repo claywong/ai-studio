@@ -64,9 +64,51 @@ export interface UsageLogsParams {
   model?: string
   session_id?: string
   account_id?: number
+  group_id?: number
+}
+
+export interface UserOption {
+  id: number
+  email: string
+  username: string
+}
+
+export interface AccountOption {
+  id: number
+  name: string
+  platform: string
+}
+
+export interface GroupOption {
+  id: number
+  name: string
+}
+
+export interface ModelOption {
+  model: string
 }
 
 export async function fetchUsageLogs(params: UsageLogsParams): Promise<UsageLogsResponse> {
   const res = await api.get<UsageLogsResponse>('/admin/reports/usage-logs', { params })
+  return res.data
+}
+
+export async function searchUsers(search: string): Promise<UserOption[]> {
+  const res = await api.get<UserOption[]>('/admin/reports/users', { params: { search, page_size: 20 } })
+  return res.data
+}
+
+export async function fetchAccounts(): Promise<AccountOption[]> {
+  const res = await api.get<AccountOption[]>('/admin/reports/accounts-list')
+  return res.data
+}
+
+export async function fetchGroups(): Promise<GroupOption[]> {
+  const res = await api.get<GroupOption[]>('/admin/reports/groups')
+  return res.data
+}
+
+export async function fetchModels(): Promise<{ models: { model: string }[] }> {
+  const res = await api.get<{ models: { model: string }[] }>('/admin/reports/models')
   return res.data
 }

@@ -507,6 +507,15 @@ async def get_user_usage_logs(
     return data
 
 
+@router.get("/groups")
+async def get_groups(
+    _: Annotated[dict, Depends(require_admin)],
+):
+    data = await _admin_get_simple("/admin/groups", {"page": 1, "page_size": 200})
+    items = data.get("items", []) if data else []
+    return [{"id": g["id"], "name": g["name"]} for g in items]
+
+
 @router.get("/usage-logs")
 async def get_usage_logs_with_content(
     _: Annotated[dict, Depends(require_admin)],
@@ -518,6 +527,7 @@ async def get_usage_logs_with_content(
     model: str | None = Query(None),
     session_id: str | None = Query(None),
     account_id: int | None = Query(None),
+    group_id: int | None = Query(None),
 ):
     params: dict[str, Any] = {"page": page, "page_size": page_size, "with_content": True}
     if start_date:
@@ -532,6 +542,8 @@ async def get_usage_logs_with_content(
         params["session_id"] = session_id
     if account_id:
         params["account_id"] = account_id
+    if group_id:
+        params["group_id"] = group_id
     data = await _admin_get_simple("/admin/usage", params)
     return data
 

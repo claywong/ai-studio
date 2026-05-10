@@ -267,6 +267,12 @@ async def get_account_latency(
                 ul.model,
                 ul.first_token_ms,
                 ul.duration_ms,
+                ul.output_tokens,
+                CASE
+                    WHEN ul.duration_ms > 0
+                    THEN (ul.output_tokens::numeric / (ul.duration_ms / 1000.0))
+                    ELSE NULL
+                END AS otps,
                 ROW_NUMBER() OVER (PARTITION BY ul.account_id ORDER BY ul.created_at DESC) AS rn
             FROM usage_logs ul
             INNER JOIN accounts a ON a.id = ul.account_id AND a.status != 'deleted'
@@ -277,7 +283,13 @@ async def get_account_latency(
                 ul.account_id,
                 ul.model,
                 ul.first_token_ms,
-                ul.duration_ms
+                ul.duration_ms,
+                ul.output_tokens,
+                CASE
+                    WHEN ul.duration_ms > 0
+                    THEN (ul.output_tokens::numeric / (ul.duration_ms / 1000.0))
+                    ELSE NULL
+                END AS otps
             FROM usage_logs ul
             WHERE ul.created_at >= NOW() - ($2 || ' minutes')::interval
               AND ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
@@ -294,12 +306,20 @@ async def get_account_latency(
             )::int                                                                           AS ttft_p90,
             ROUND(AVG(r.duration_ms))::int                                                   AS dur_avg,
             PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY r.duration_ms)::int                 AS dur_p90,
+            ROUND(AVG(r.otps) FILTER (WHERE r.otps IS NOT NULL)::numeric, 2)                AS otps_avg,
+            ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (
+                ORDER BY CASE WHEN r.otps IS NOT NULL THEN r.otps END
+            )::numeric, 2)                                                                   AS otps_p90,
             COUNT(rc.account_id)                                                             AS recent_requests,
             ROUND(AVG(rc.first_token_ms) FILTER (WHERE rc.first_token_ms > 0))::int         AS recent_ttft_avg,
             PERCENTILE_CONT(0.9) WITHIN GROUP (
                 ORDER BY CASE WHEN rc.first_token_ms > 0 THEN rc.first_token_ms END
             )::int                                                                           AS recent_ttft_p90,
-            ROUND(AVG(rc.duration_ms))::int                                                  AS recent_dur_avg
+            ROUND(AVG(rc.duration_ms))::int                                                  AS recent_dur_avg,
+            ROUND(AVG(rc.otps) FILTER (WHERE rc.otps IS NOT NULL)::numeric, 2)              AS recent_otps_avg,
+            ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (
+                ORDER BY CASE WHEN rc.otps IS NOT NULL THEN rc.otps END
+            )::numeric, 2)                                                                   AS recent_otps_p90
         FROM ranked r
         LEFT JOIN recent rc ON rc.account_id = r.account_id AND rc.model = r.model
         WHERE r.rn <= $1
@@ -334,10 +354,14 @@ async def get_account_latency(
             "ttft_p90": row["ttft_p90"],
             "dur_avg": row["dur_avg"],
             "dur_p90": row["dur_p90"],
+            "otps_avg": float(row["otps_avg"]) if row["otps_avg"] is not None else None,
+            "otps_p90": float(row["otps_p90"]) if row["otps_p90"] is not None else None,
             "recent_requests": row["recent_requests"],
             "recent_ttft_avg": row["recent_ttft_avg"],
             "recent_ttft_p90": row["recent_ttft_p90"],
             "recent_dur_avg": row["recent_dur_avg"],
+            "recent_otps_avg": float(row["recent_otps_avg"]) if row["recent_otps_avg"] is not None else None,
+            "recent_otps_p90": float(row["recent_otps_p90"]) if row["recent_otps_p90"] is not None else None,
         })
 
     # 按组聚合，组内账号已按请求数降序（SQL 保证），组本身也按总请求数降序

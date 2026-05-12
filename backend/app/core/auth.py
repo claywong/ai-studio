@@ -50,9 +50,21 @@ async def require_admin(
     return user
 
 
+REPORTER_EMAILS: frozenset[str] = frozenset([
+    "xiqiang@g7.com.cn",
+    "liuyunyang@g7.com.cn",
+    "wangzhong@g7.com.cn",
+    "wanghao_cd@g7.com.cn",
+    "denglei@g7.com.cn",
+    "guijiabin@g7.com.cn",
+])
+
+
 async def require_admin_or_reporter(
     user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> dict[str, Any]:
-    if user.get("role") not in ("admin", "reporter"):
+    role = user.get("role")
+    email = user.get("email", "")
+    if role not in ("admin", "reporter") and email not in REPORTER_EMAILS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access required")
     return user

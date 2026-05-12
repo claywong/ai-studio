@@ -37,9 +37,9 @@ const SHORTCUTS = [
   { label: '近90天',start: () => daysAgo(89), end: () => today() },
 ]
 
-const startDate = ref(daysAgo(29))
+const startDate = ref(daysAgo(6))
 const endDate   = ref(today())
-const activeShortcut = ref('近30天')
+const activeShortcut = ref('近7天')
 
 function applyShortcut(s: typeof SHORTCUTS[0]) {
   startDate.value    = s.start()

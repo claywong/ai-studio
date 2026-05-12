@@ -7,7 +7,7 @@ import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.auth import require_admin
+from app.core.auth import require_admin_or_reporter
 from app.core.config import get_settings
 
 router = APIRouter(prefix="/admin/reports", tags=["admin-reports"])
@@ -71,7 +71,7 @@ def _parse_dates(start_date: str | None, end_date: str | None) -> tuple[date, da
 
 @router.get("/overview")
 async def get_overview(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
 ):
@@ -101,7 +101,7 @@ async def get_overview(
 
 @router.get("/trend")
 async def get_trend(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     timezone: str = Query("Asia/Shanghai"),
@@ -149,7 +149,7 @@ async def get_trend(
 
 @router.get("/models")
 async def get_models(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     timezone: str = Query("Asia/Shanghai"),
@@ -163,7 +163,7 @@ async def get_models(
 
 @router.get("/accounts")
 async def get_accounts(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
 ):
@@ -251,7 +251,7 @@ async def get_accounts(
 
 @router.get("/account-latency")
 async def get_account_latency(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     limit: int = Query(300, ge=1, le=1000),
     recent_minutes: int = Query(10, ge=1, le=60),
 ):
@@ -413,7 +413,7 @@ async def get_account_latency(
 
 @router.get("/users")
 async def search_users(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     search: str = Query(""),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -431,7 +431,7 @@ async def search_users(
 @router.get("/users/{user_id}/daily-trend")
 async def get_user_daily_trend(
     user_id: int,
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     timezone: str = Query("Asia/Shanghai"),
@@ -476,7 +476,7 @@ async def get_user_daily_trend(
 
 @router.get("/user-breakdown")
 async def get_user_breakdown(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     timezone: str = Query("Asia/Shanghai"),
@@ -491,7 +491,7 @@ async def get_user_breakdown(
 
 @router.get("/accounts-list")
 async def get_accounts_list(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     page_size: int = Query(200, ge=1, le=200),
 ):
     data = await _admin_get_simple("/admin/accounts", {"page": 1, "page_size": page_size})
@@ -518,7 +518,7 @@ async def get_accounts_list(
 @router.get("/accounts/{account_id}/health-stats")
 async def get_account_health_stats(
     account_id: int,
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
 ):
     return await _admin_get_simple(f"/admin/accounts/{account_id}/health-stats")
 
@@ -526,7 +526,7 @@ async def get_account_health_stats(
 @router.get("/accounts/{account_id}/scheduled-test-plans")
 async def get_account_scheduled_plans(
     account_id: int,
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
 ):
     return await _admin_get_raw(f"/admin/accounts/{account_id}/scheduled-test-plans")
 
@@ -534,7 +534,7 @@ async def get_account_scheduled_plans(
 @router.get("/scheduled-test-plans/{plan_id}/results")
 async def get_plan_results(
     plan_id: int,
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     limit: int = Query(48, ge=1, le=300),
     timezone: str = Query("Asia/Shanghai"),
 ):
@@ -547,7 +547,7 @@ async def get_plan_results(
 @router.get("/users/{user_id}/usage-logs")
 async def get_user_usage_logs(
     user_id: int,
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     start_date: str | None = Query(None),
@@ -564,7 +564,7 @@ async def get_user_usage_logs(
 
 @router.get("/groups")
 async def get_groups(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
 ):
     data = await _admin_get_raw("/admin/groups/all")
     items = data if isinstance(data, list) else (data.get("items", []) if isinstance(data, dict) else [])
@@ -573,7 +573,7 @@ async def get_groups(
 
 @router.get("/usage-logs")
 async def get_usage_logs_with_content(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     start_date: str | None = Query(None),
@@ -605,7 +605,7 @@ async def get_usage_logs_with_content(
 
 @router.get("/account-usage-timeline")
 async def get_account_usage_timeline(
-    _: Annotated[dict, Depends(require_admin)],
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
     account_ids: str = Query(..., description="逗号分隔的账号 ID"),
     hours: int = Query(1, ge=1, le=168),
 ):

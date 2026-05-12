@@ -48,3 +48,11 @@ async def require_admin(
     if user.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return user
+
+
+async def require_admin_or_reporter(
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
+    if user.get("role") not in ("admin", "reporter"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access required")
+    return user

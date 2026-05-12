@@ -1,23 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterView, RouterLink } from 'vue-router'
+import { isAdmin, isReporter } from './router/index'
 
-const isAdmin = computed(() => {
-  try {
-    const user = JSON.parse(localStorage.getItem('auth_user') ?? '{}') as { role?: string }
-    return user.role === 'admin'
-  } catch {
-    return false
-  }
-})
+const showAdmin = computed(() => isAdmin())
+const showReports = computed(() => isReporter())
 </script>
 
 <template>
   <div>
     <nav class="top-nav">
       <RouterLink to="/images">图片工作台</RouterLink>
-      <template v-if="isAdmin">
+      <template v-if="showReports">
         <RouterLink to="/admin/reports">管理报表</RouterLink>
+      </template>
+      <template v-if="showAdmin">
         <RouterLink to="/admin/channel-status">渠道状态</RouterLink>
         <RouterLink to="/admin/user-trend">用户趋势</RouterLink>
         <RouterLink to="/admin/account-latency">账号延迟</RouterLink>

@@ -9,6 +9,35 @@ import AccountUsageTimeline from '../pages/AccountUsageTimeline.vue'
 import AccountHealthStatus from '../pages/AccountHealthStatus.vue'
 import UsageLogs from '../pages/UsageLogs.vue'
 
+// AI工作组推广小组 成员邮箱白名单（可访问 /images 和 /admin/reports）
+const REPORTER_EMAILS = new Set([
+  'xiqiang@g7.com.cn',
+  'liuyunyang@g7.com.cn',
+  'wangzhong@g7.com.cn',
+  'wanghao_cd@g7.com.cn',
+  'denglei@g7.com.cn',
+  'guijiabin@g7.com.cn',
+])
+
+export function isAdmin(): boolean {
+  try {
+    const user = JSON.parse(localStorage.getItem('auth_user') ?? '{}') as { role?: string }
+    return user.role === 'admin'
+  } catch {
+    return false
+  }
+}
+
+export function isReporter(): boolean {
+  try {
+    const user = JSON.parse(localStorage.getItem('auth_user') ?? '{}') as { role?: string; email?: string }
+    if (user.role === 'admin') return true
+    return !!user.email && REPORTER_EMAILS.has(user.email)
+  } catch {
+    return false
+  }
+}
+
 const router = createRouter({
   history: createWebHistory('/app/ai/'),
   routes: [
@@ -17,7 +46,7 @@ const router = createRouter({
     {
       path: '/admin/reports',
       component: AdminReports,
-      meta: { requiresAdmin: true },
+      meta: { requiresReporter: true },
     },
     {
       path: '/admin/channel-status',
@@ -58,21 +87,24 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  if (!to.meta.requiresAdmin) return true
-
   const rawUser = localStorage.getItem('auth_user')
-  if (!rawUser) {
-    window.location.href = `/login?redirect=/app/ai${to.path}`
-    return false
+
+  if (to.meta.requiresAdmin) {
+    if (!rawUser) {
+      window.location.href = `/login?redirect=/app/ai${to.path}`
+      return false
+    }
+    if (!isAdmin()) return { path: '/images' }
+    return true
   }
 
-  try {
-    const user = JSON.parse(rawUser) as { role?: string }
-    if (user.role !== 'admin') {
-      return { path: '/images' }
+  if (to.meta.requiresReporter) {
+    if (!rawUser) {
+      window.location.href = `/login?redirect=/app/ai${to.path}`
+      return false
     }
-  } catch {
-    return { path: '/images' }
+    if (!isReporter()) return { path: '/images' }
+    return true
   }
 
   return true

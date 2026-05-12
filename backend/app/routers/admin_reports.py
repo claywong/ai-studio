@@ -390,7 +390,7 @@ async def get_account_latency(
             "recent_cache_hit_rate": float(row["recent_cache_hit_rate"]) if row["recent_cache_hit_rate"] is not None else None,
         })
 
-    # 按组聚合，组内账号已按请求数降序（SQL 保证），组本身也按总请求数降序
+    # 按组聚合，组本身按历史总请求数降序
     groups: dict[str, dict] = {}
     for acct in accounts.values():
         g = acct["group"]
@@ -402,6 +402,11 @@ async def get_account_latency(
     sorted_groups = sorted(groups.values(), key=lambda x: x["total_requests"], reverse=True)
     for grp in sorted_groups:
         del grp["total_requests"]
+        # 组内账号按实时窗口总请求数降序
+        grp["accounts"].sort(
+            key=lambda a: sum(m["recent_requests"] for m in a["models"]),
+            reverse=True,
+        )
 
     return {"groups": sorted_groups, "limit": limit, "recent_minutes": recent_minutes}
 

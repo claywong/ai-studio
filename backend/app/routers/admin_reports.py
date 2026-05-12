@@ -7,7 +7,7 @@ import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.auth import require_admin_or_reporter
+from app.core.auth import require_admin, require_admin_or_reporter
 from app.core.config import get_settings
 
 router = APIRouter(prefix="/admin/reports", tags=["admin-reports"])
@@ -163,7 +163,7 @@ async def get_models(
 
 @router.get("/accounts")
 async def get_accounts(
-    _: Annotated[dict, Depends(require_admin_or_reporter)],
+    _: Annotated[dict, Depends(require_admin)],
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
 ):

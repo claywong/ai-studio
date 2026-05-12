@@ -6,8 +6,8 @@ import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import { computed, onMounted, ref } from 'vue'
 import {
-  fetchAccounts, fetchModels, fetchOverview, fetchTrend, fetchUserBreakdown,
-  type AccountGroup, type DateRange, type ModelItem, type OverviewData, type TrendData, type UserBreakdownItem,
+  fetchModels, fetchOverview, fetchTrend, fetchUserBreakdown,
+  type DateRange, type ModelItem, type OverviewData, type TrendData, type UserBreakdownItem,
 } from '../api/adminReports'
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
@@ -61,7 +61,7 @@ const error   = ref('')
 const overview      = ref<OverviewData | null>(null)
 const trendData     = ref<TrendData | null>(null)
 const modelsData    = ref<ModelItem[]>([])
-const accountGroups = ref<AccountGroup[]>([])
+const accountGroups = ref<never[]>([])
 const expandedGroups = ref<Set<string>>(new Set())
 const userBreakdown = ref<UserBreakdownItem[]>([])
 const userPage = ref(1)
@@ -88,17 +88,15 @@ async function loadAll() {
   loading.value = true
   error.value = ''
   try {
-    const [ov, tr, md, ac, ub] = await Promise.all([
+    const [ov, tr, md, ub] = await Promise.all([
       fetchOverview(range.value),
       fetchTrend(range.value),
       fetchModels(range.value),
-      fetchAccounts(range.value),
       fetchUserBreakdown(range.value),
     ])
     overview.value      = ov
     trendData.value     = tr
     modelsData.value    = md.models ?? []
-    accountGroups.value = ac
     userBreakdown.value = (ub?.users ?? []).sort((a, b) => b.actual_cost - a.actual_cost)
     userPage.value = 1
     lastUpdatedAt.value = new Date().toISOString()
@@ -289,19 +287,9 @@ const modelOption = computed(() => {
   }
 })
 
-const totalCost = computed(() =>
-  accountGroups.value.reduce((s, g) => s + g.total_cost, 0).toFixed(2),
-)
-const totalRequests = computed(() =>
-  accountGroups.value.reduce((s, g) => s + g.total_requests, 0).toLocaleString(),
-)
-const totalTokens = computed(() => {
-  const n = accountGroups.value.reduce((s, g) => s + g.input_tokens + g.output_tokens + (g.cache_creation_tokens ?? 0) + (g.cache_read_tokens ?? 0), 0)
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
-  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)         return `${(n / 1_000).toFixed(1)}K`
-  return String(n)
-})
+const totalCost = computed(() => '0.00')
+const totalRequests = computed(() => '0')
+const totalTokens = computed(() => '0')
 
 const periodLabel = computed(() => {
   if (startDate.value === endDate.value) return '当日'

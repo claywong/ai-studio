@@ -287,9 +287,21 @@ const modelOption = computed(() => {
   }
 })
 
-const totalCost = computed(() => '0.00')
-const totalRequests = computed(() => '0')
-const totalTokens = computed(() => '0')
+const totalCost = computed(() =>
+  (trendData.value?.trend ?? []).reduce((s, d) => s + d.actual_cost, 0).toFixed(2)
+)
+const totalRequests = computed(() =>
+  (trendData.value?.trend ?? []).reduce((s, d) => s + d.requests, 0).toLocaleString()
+)
+const totalTokens = computed(() => {
+  const n = (trendData.value?.trend ?? []).reduce(
+    (s, d) => s + d.input_tokens + d.output_tokens + (d.cache_creation_tokens ?? 0) + (d.cache_read_tokens ?? 0), 0
+  )
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
+  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)         return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+})
 
 const periodLabel = computed(() => {
   if (startDate.value === endDate.value) return '当日'

@@ -273,6 +273,9 @@ async def get_account_latency(
                     THEN (ul.output_tokens::numeric / (ul.duration_ms / 1000.0))
                     ELSE NULL
                 END AS otps,
+                COALESCE(ul.cache_read_tokens, 0)                       AS cache_read_tokens,
+                COALESCE(ul.input_tokens, 0)                            AS input_tokens,
+                COALESCE(ul.cache_creation_tokens, 0)                   AS cache_creation_tokens,
                 ROW_NUMBER() OVER (PARTITION BY ul.account_id ORDER BY ul.created_at DESC) AS rn
             FROM usage_logs ul
             INNER JOIN accounts a ON a.id = ul.account_id AND a.status != 'deleted'
@@ -289,7 +292,10 @@ async def get_account_latency(
                     WHEN ul.duration_ms > 0
                     THEN (ul.output_tokens::numeric / (ul.duration_ms / 1000.0))
                     ELSE NULL
-                END AS otps
+                END AS otps,
+                COALESCE(ul.cache_read_tokens, 0)     AS cache_read_tokens,
+                COALESCE(ul.input_tokens, 0)          AS input_tokens,
+                COALESCE(ul.cache_creation_tokens, 0) AS cache_creation_tokens
             FROM usage_logs ul
             WHERE ul.created_at >= NOW() - ($2 || ' minutes')::interval
               AND ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
@@ -310,6 +316,12 @@ async def get_account_latency(
             ROUND(PERCENTILE_CONT(0.1) WITHIN GROUP (
                 ORDER BY CASE WHEN r.otps IS NOT NULL THEN r.otps END
             )::numeric, 2)                                                                   AS otps_p10,
+            CASE
+                WHEN SUM(r.cache_read_tokens) + SUM(r.input_tokens) + SUM(r.cache_creation_tokens) > 0
+                THEN ROUND(SUM(r.cache_read_tokens)::numeric /
+                     (SUM(r.cache_read_tokens) + SUM(r.input_tokens) + SUM(r.cache_creation_tokens)) * 100, 1)
+                ELSE NULL
+            END                                                                              AS cache_hit_rate,
             COUNT(rc.account_id)                                                             AS recent_requests,
             ROUND(AVG(rc.first_token_ms) FILTER (WHERE rc.first_token_ms > 0))::int         AS recent_ttft_avg,
             PERCENTILE_CONT(0.9) WITHIN GROUP (
@@ -319,7 +331,13 @@ async def get_account_latency(
             ROUND(AVG(rc.otps) FILTER (WHERE rc.otps IS NOT NULL)::numeric, 2)              AS recent_otps_avg,
             ROUND(PERCENTILE_CONT(0.1) WITHIN GROUP (
                 ORDER BY CASE WHEN rc.otps IS NOT NULL THEN rc.otps END
-            )::numeric, 2)                                                                   AS recent_otps_p10
+            )::numeric, 2)                                                                   AS recent_otps_p10,
+            CASE
+                WHEN SUM(rc.cache_read_tokens) + SUM(rc.input_tokens) + SUM(rc.cache_creation_tokens) > 0
+                THEN ROUND(SUM(rc.cache_read_tokens)::numeric /
+                     (SUM(rc.cache_read_tokens) + SUM(rc.input_tokens) + SUM(rc.cache_creation_tokens)) * 100, 1)
+                ELSE NULL
+            END                                                                              AS recent_cache_hit_rate
         FROM ranked r
         LEFT JOIN recent rc ON rc.account_id = r.account_id AND rc.model = r.model
         WHERE r.rn <= $1
@@ -356,12 +374,14 @@ async def get_account_latency(
             "dur_p90": row["dur_p90"],
             "otps_avg": float(row["otps_avg"]) if row["otps_avg"] is not None else None,
             "otps_p10": float(row["otps_p10"]) if row["otps_p10"] is not None else None,
+            "cache_hit_rate": float(row["cache_hit_rate"]) if row["cache_hit_rate"] is not None else None,
             "recent_requests": row["recent_requests"],
             "recent_ttft_avg": row["recent_ttft_avg"],
             "recent_ttft_p90": row["recent_ttft_p90"],
             "recent_dur_avg": row["recent_dur_avg"],
             "recent_otps_avg": float(row["recent_otps_avg"]) if row["recent_otps_avg"] is not None else None,
             "recent_otps_p10": float(row["recent_otps_p10"]) if row["recent_otps_p10"] is not None else None,
+            "recent_cache_hit_rate": float(row["recent_cache_hit_rate"]) if row["recent_cache_hit_rate"] is not None else None,
         })
 
     # 按组聚合，组内账号已按请求数降序（SQL 保证），组本身也按总请求数降序

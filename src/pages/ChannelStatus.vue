@@ -5,7 +5,7 @@ import { GridComponent, LegendComponent, TooltipComponent, MarkLineComponent } f
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import { computed, onMounted, ref, watch } from 'vue'
-import { fetchMonitors, fetchMonitorHistory, type ChannelMonitor, type HistoryItem } from '../api/channelMonitors'
+import { fetchMonitors, fetchMonitorHistory, fetchSystemLatencyTrend, type ChannelMonitor, type HistoryItem, type SystemLatencyPoint } from '../api/channelMonitors'
 
 use([CanvasRenderer, LineChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, MarkLineComponent])
 
@@ -15,6 +15,17 @@ const monitors = ref<ChannelMonitor[]>([])
 const selectedId = ref<number | null>(null)
 const historyLoading = ref(false)
 const history = ref<HistoryItem[]>([])
+
+const systemTrendHours = ref(24)
+const systemTrendLoading = ref(false)
+const systemTrend = ref<SystemLatencyPoint[]>([])
+
+const TREND_RANGES = [
+  { label: '6h', hours: 6 },
+  { label: '24h', hours: 24 },
+  { label: '3d', hours: 72 },
+  { label: '7d', hours: 168 },
+]
 
 const STATUS_COLOR: Record<string, string> = {
   operational: '#16a34a',
@@ -57,6 +68,19 @@ async function loadMonitors() {
   }
 }
 
+async function loadSystemTrend() {
+  systemTrendLoading.value = true
+  systemTrend.value = []
+  try {
+    const data = await fetchSystemLatencyTrend(systemTrendHours.value)
+    systemTrend.value = data.items ?? []
+  } catch {
+    systemTrend.value = []
+  } finally {
+    systemTrendLoading.value = false
+  }
+}
+
 async function loadHistory(id: number) {
   historyLoading.value = true
   history.value = []
@@ -71,13 +95,87 @@ async function loadHistory(id: number) {
 }
 
 watch(selectedId, (id) => { if (id !== null) void loadHistory(id) })
-onMounted(loadMonitors)
+watch(systemTrendHours, () => void loadSystemTrend())
+onMounted(() => { void loadMonitors(); void loadSystemTrend() })
 
 const selectedMonitor = computed(() =>
   monitors.value.find(m => m.id === selectedId.value) ?? null,
 )
 
-// 历史图表：延迟折线 + 状态散点
+// 系统整体 TTFT / OTPS 趋势图
+const systemTrendChartOption = computed(() => {
+  const items = systemTrend.value
+  if (!items.length) return {}
+
+  const fmtHour = (iso: string) => {
+    const d = new Date(iso)
+    return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:00`
+  }
+
+  const ttftAvg = items.filter(i => i.ttft_avg != null).map(i => [new Date(i.hour).getTime(), i.ttft_avg])
+  const ttftP90 = items.filter(i => i.ttft_p90 != null).map(i => [new Date(i.hour).getTime(), i.ttft_p90])
+  const otpsAvg = items.filter(i => i.otps_avg != null).map(i => [new Date(i.hour).getTime(), i.otps_avg])
+  const otpsP10 = items.filter(i => i.otps_p10 != null).map(i => [new Date(i.hour).getTime(), i.otps_p10])
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', lineStyle: { color: '#cbd5e1' } },
+      backgroundColor: '#ffffff',
+      borderColor: '#e2e8f0',
+      textStyle: { color: '#0f172a', fontSize: 12 },
+      formatter: (params: { seriesName: string; value: [number, number] }[]) => {
+        if (!params.length) return ''
+        const ts = params[0].value[0]
+        const d = new Date(ts)
+        const header = `<div style="font-weight:600;margin-bottom:4px">${fmtHour(d.toISOString())}</div>`
+        const lines = params.map(p => {
+          const v = p.value[1]
+          const unit = p.seriesName.includes('OTPS') ? ' tok/s' : ' ms'
+          return `${p.seriesName}：<b>${v != null ? v + unit : '-'}</b>`
+        })
+        return header + lines.join('<br/>')
+      },
+    },
+    legend: {
+      data: ['TTFT 均值', 'TTFT P90', 'OTPS 均值', 'OTPS P10'],
+      textStyle: { color: '#64748b', fontSize: 12 },
+      bottom: 0,
+    },
+    grid: { left: 64, right: 64, top: 20, bottom: 48 },
+    xAxis: {
+      type: 'time',
+      axisLabel: {
+        color: '#94a3b8', fontSize: 10, rotate: 30,
+        formatter: (value: number) => {
+          const d = new Date(value)
+          return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:00`
+        },
+      },
+      axisLine: { lineStyle: { color: '#e2e8f0' } },
+      axisTick: { show: false },
+    },
+    yAxis: [
+      {
+        type: 'value', name: 'TTFT (ms)', nameTextStyle: { color: '#2563eb', fontSize: 11 },
+        axisLabel: { color: '#2563eb', formatter: (v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}s` : `${v}` },
+        splitLine: { lineStyle: { color: '#f1f5f9' } },
+      },
+      {
+        type: 'value', name: 'OTPS (tok/s)', nameTextStyle: { color: '#d97706', fontSize: 11 },
+        axisLabel: { color: '#d97706', formatter: (v: number) => `${v}` },
+        splitLine: { show: false },
+      },
+    ],
+    series: [
+      { name: 'TTFT 均值', type: 'line', yAxisIndex: 0, data: ttftAvg, smooth: true, symbol: 'none', lineStyle: { color: '#2563eb', width: 2 }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(37,99,235,0.12)' }, { offset: 1, color: 'rgba(37,99,235,0)' }] } } },
+      { name: 'TTFT P90', type: 'line', yAxisIndex: 0, data: ttftP90, smooth: true, symbol: 'none', lineStyle: { color: '#2563eb', width: 1.5, type: 'dashed' } },
+      { name: 'OTPS 均值', type: 'line', yAxisIndex: 1, data: otpsAvg, smooth: true, symbol: 'none', lineStyle: { color: '#d97706', width: 2 }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(217,119,6,0.10)' }, { offset: 1, color: 'rgba(217,119,6,0)' }] } } },
+      { name: 'OTPS P10', type: 'line', yAxisIndex: 1, data: otpsP10, smooth: true, symbol: 'none', lineStyle: { color: '#d97706', width: 1.5, type: 'dashed' } },
+    ],
+  }
+})
 const historyChartOption = computed(() => {
   const items = history.value
   if (!items.length) return {}
@@ -240,6 +338,25 @@ const recentErrors = computed(() =>
         </div>
       </div>
 
+      <!-- 系统整体 TTFT / OTPS 趋势 -->
+      <div class="chart-card">
+        <div class="card-title-row">
+          <span class="card-title">系统整体延迟趋势（TTFT / OTPS）</span>
+          <div class="range-btns">
+            <button
+              v-for="r in TREND_RANGES"
+              :key="r.hours"
+              class="range-btn"
+              :class="{ active: systemTrendHours === r.hours }"
+              @click="systemTrendHours = r.hours"
+            >{{ r.label }}</button>
+          </div>
+        </div>
+        <div v-if="systemTrendLoading" class="center-msg sm">加载中…</div>
+        <VChart v-else-if="systemTrend.length" class="chart" :option="systemTrendChartOption" autoresize />
+        <div v-else class="center-msg sm">暂无数据</div>
+      </div>
+
       <!-- 详情区 -->
       <div v-if="selectedMonitor" class="detail">
         <div class="detail-header">
@@ -281,6 +398,25 @@ const recentErrors = computed(() =>
             <div class="stat-val">{{ fmtAvail(selectedMonitor.availability_7d) }}</div>
             <div class="stat-label">7天可用率</div>
           </div>
+        </div>
+
+        <!-- 系统整体 TTFT / OTPS 趋势 -->
+        <div class="chart-card">
+          <div class="card-title-row">
+            <span class="card-title">系统整体延迟趋势（TTFT / OTPS）</span>
+            <div class="range-btns">
+              <button
+                v-for="r in TREND_RANGES"
+                :key="r.hours"
+                class="range-btn"
+                :class="{ active: systemTrendHours === r.hours }"
+                @click="systemTrendHours = r.hours"
+              >{{ r.label }}</button>
+            </div>
+          </div>
+          <div v-if="systemTrendLoading" class="center-msg sm">加载中…</div>
+          <VChart v-else-if="systemTrend.length" class="chart" :option="systemTrendChartOption" autoresize />
+          <div v-else class="center-msg sm">暂无数据</div>
         </div>
 
         <!-- 延迟图 -->
@@ -438,6 +574,32 @@ const recentErrors = computed(() =>
   color: #374151;
   margin-bottom: 16px;
 }
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.card-title-row .card-title { margin-bottom: 0; }
+
+.range-btns {
+  display: flex;
+  gap: 4px;
+}
+.range-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.range-btn:hover { border-color: #94a3b8; color: #374151; }
+.range-btn.active { border-color: #2563eb; background: #eff6ff; color: #2563eb; font-weight: 600; }
+
 .chart { height: 280px; }
 
 .err-table {

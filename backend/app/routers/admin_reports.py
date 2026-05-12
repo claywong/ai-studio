@@ -603,6 +603,59 @@ async def get_usage_logs_with_content(
     return data
 
 
+@router.get("/system-latency-trend")
+async def get_system_latency_trend(
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
+    hours: int = Query(24, ge=1, le=168),
+    timezone: str = Query("Asia/Shanghai"),
+):
+    """系统整体 TTFT 和 OTPS 按小时聚合趋势，最长支持 7 天。"""
+    settings = get_settings()
+    sql = """
+        SELECT
+            date_trunc('hour', created_at AT TIME ZONE $2) AS hour_bucket,
+            ROUND(AVG(first_token_ms) FILTER (WHERE first_token_ms > 0))::int AS ttft_avg,
+            PERCENTILE_CONT(0.9) WITHIN GROUP (
+                ORDER BY CASE WHEN first_token_ms > 0 THEN first_token_ms END
+            )::int AS ttft_p90,
+            ROUND(AVG(
+                CASE WHEN duration_ms > 0
+                THEN (output_tokens::numeric / (duration_ms / 1000.0)) END
+            )::numeric, 2) AS otps_avg,
+            ROUND(PERCENTILE_CONT(0.1) WITHIN GROUP (
+                ORDER BY CASE WHEN duration_ms > 0
+                THEN (output_tokens::numeric / (duration_ms / 1000.0)) END
+            )::numeric, 2) AS otps_p10,
+            COUNT(*) AS requests
+        FROM usage_logs
+        WHERE created_at >= NOW() - ($1 || ' hours')::interval
+          AND duration_ms IS NOT NULL AND duration_ms > 0
+        GROUP BY hour_bucket
+        ORDER BY hour_bucket
+    """
+    try:
+        conn = await asyncpg.connect(settings.database_url)
+        try:
+            rows = await conn.fetch(sql, str(hours), timezone)
+        finally:
+            await conn.close()
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+    items = [
+        {
+            "hour": row["hour_bucket"].isoformat(),
+            "ttft_avg": row["ttft_avg"],
+            "ttft_p90": row["ttft_p90"],
+            "otps_avg": float(row["otps_avg"]) if row["otps_avg"] is not None else None,
+            "otps_p10": float(row["otps_p10"]) if row["otps_p10"] is not None else None,
+            "requests": row["requests"],
+        }
+        for row in rows
+    ]
+    return {"items": items, "hours": hours}
+
+
 @router.get("/account-usage-timeline")
 async def get_account_usage_timeline(
     _: Annotated[dict, Depends(require_admin_or_reporter)],

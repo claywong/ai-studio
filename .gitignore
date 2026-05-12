@@ -30,3 +30,6 @@ src/*.egg-info/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+
+# local agent config
+.claude/

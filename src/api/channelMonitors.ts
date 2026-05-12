@@ -41,3 +41,19 @@ export async function fetchMonitorHistory(
   const res = await api.get(`/admin/reports/channel-monitors/${monitorId}/history`, { params })
   return res.data
 }
+
+export interface SystemLatencyPoint {
+  hour: string
+  ttft_avg: number | null
+  ttft_p90: number | null
+  otps_avg: number | null
+  otps_p10: number | null
+  requests: number
+}
+
+export async function fetchSystemLatencyTrend(
+  hours: number,
+): Promise<{ items: SystemLatencyPoint[]; hours: number }> {
+  const res = await api.get('/admin/reports/system-latency-trend', { params: { hours } })
+  return res.data
+}

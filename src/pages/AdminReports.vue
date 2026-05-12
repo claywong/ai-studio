@@ -62,27 +62,13 @@ const overview      = ref<OverviewData | null>(null)
 const trendData     = ref<TrendData | null>(null)
 const modelsData    = ref<ModelItem[]>([])
 const accountGroups = ref<never[]>([])
-const expandedGroups = ref<Set<string>>(new Set())
+
 const userBreakdown = ref<UserBreakdownItem[]>([])
 const userPage = ref(1)
 const userPageSize = 300
 const userPagedData = computed(() => userBreakdown.value.slice((userPage.value - 1) * userPageSize, userPage.value * userPageSize))
 const userTotalPages = computed(() => Math.ceil(userBreakdown.value.length / userPageSize))
 const lastUpdatedAt = ref('')
-
-function toggleGroup(name: string) {
-  const next = new Set(expandedGroups.value)
-  if (next.has(name)) {
-    next.delete(name)
-  } else {
-    next.add(name)
-  }
-  expandedGroups.value = next
-}
-
-function isGroupExpanded(name: string) {
-  return expandedGroups.value.has(name)
-}
 
 async function loadAll() {
   loading.value = true

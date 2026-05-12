@@ -38,9 +38,9 @@ function latencyClass(ms: number | null): string {
 
 function cacheRateClass(rate: number | null): string {
   if (rate == null) return ''
-  if (rate >= 60) return 'good'
-  if (rate >= 30) return 'ok'
-  if (rate >= 10) return 'warn'
+  if (rate >= 90) return 'good'
+  if (rate >= 85) return 'ok'
+  if (rate >= 80) return 'warn'
   return 'bad'
 }
 

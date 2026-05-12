@@ -281,24 +281,31 @@ async def get_account_latency(
             INNER JOIN accounts a ON a.id = ul.account_id AND a.status != 'deleted'
             WHERE ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
         ),
-        recent AS (
+        recent_agg AS (
             SELECT
                 ul.account_id,
                 ul.model,
-                ul.first_token_ms,
-                ul.duration_ms,
-                ul.output_tokens,
-                CASE
-                    WHEN ul.duration_ms > 0
-                    THEN (ul.output_tokens::numeric / (ul.duration_ms / 1000.0))
-                    ELSE NULL
-                END AS otps,
-                COALESCE(ul.cache_read_tokens, 0)     AS cache_read_tokens,
-                COALESCE(ul.input_tokens, 0)          AS input_tokens,
-                COALESCE(ul.cache_creation_tokens, 0) AS cache_creation_tokens
+                COUNT(*)                                                                          AS recent_requests,
+                ROUND(AVG(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0))::int          AS recent_ttft_avg,
+                PERCENTILE_CONT(0.9) WITHIN GROUP (
+                    ORDER BY CASE WHEN ul.first_token_ms > 0 THEN ul.first_token_ms END
+                )::int                                                                            AS recent_ttft_p90,
+                ROUND(AVG(ul.duration_ms))::int                                                   AS recent_dur_avg,
+                ROUND(AVG(
+                    CASE WHEN ul.duration_ms > 0
+                    THEN (ul.output_tokens::numeric / (ul.duration_ms / 1000.0)) END
+                )::numeric, 2)                                                                    AS recent_otps_avg,
+                ROUND(PERCENTILE_CONT(0.1) WITHIN GROUP (
+                    ORDER BY CASE WHEN ul.duration_ms > 0
+                    THEN (ul.output_tokens::numeric / (ul.duration_ms / 1000.0)) END
+                )::numeric, 2)                                                                    AS recent_otps_p10,
+                SUM(COALESCE(ul.cache_read_tokens, 0))                                            AS recent_cache_read,
+                SUM(COALESCE(ul.input_tokens, 0))                                                 AS recent_input,
+                SUM(COALESCE(ul.cache_creation_tokens, 0))                                        AS recent_cache_creation
             FROM usage_logs ul
             WHERE ul.created_at >= NOW() - ($2 || ' minutes')::interval
               AND ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
+            GROUP BY ul.account_id, ul.model
         )
         SELECT
             r.account_id,
@@ -322,26 +329,25 @@ async def get_account_latency(
                      (SUM(r.cache_read_tokens) + SUM(r.input_tokens) + SUM(r.cache_creation_tokens)) * 100, 1)
                 ELSE NULL
             END                                                                              AS cache_hit_rate,
-            COUNT(rc.account_id)                                                             AS recent_requests,
-            ROUND(AVG(rc.first_token_ms) FILTER (WHERE rc.first_token_ms > 0))::int         AS recent_ttft_avg,
-            PERCENTILE_CONT(0.9) WITHIN GROUP (
-                ORDER BY CASE WHEN rc.first_token_ms > 0 THEN rc.first_token_ms END
-            )::int                                                                           AS recent_ttft_p90,
-            ROUND(AVG(rc.duration_ms))::int                                                  AS recent_dur_avg,
-            ROUND(AVG(rc.otps) FILTER (WHERE rc.otps IS NOT NULL)::numeric, 2)              AS recent_otps_avg,
-            ROUND(PERCENTILE_CONT(0.1) WITHIN GROUP (
-                ORDER BY CASE WHEN rc.otps IS NOT NULL THEN rc.otps END
-            )::numeric, 2)                                                                   AS recent_otps_p10,
+            COALESCE(ra.recent_requests, 0)                                                  AS recent_requests,
+            ra.recent_ttft_avg,
+            ra.recent_ttft_p90,
+            ra.recent_dur_avg,
+            ra.recent_otps_avg,
+            ra.recent_otps_p10,
             CASE
-                WHEN SUM(rc.cache_read_tokens) + SUM(rc.input_tokens) + SUM(rc.cache_creation_tokens) > 0
-                THEN ROUND(SUM(rc.cache_read_tokens)::numeric /
-                     (SUM(rc.cache_read_tokens) + SUM(rc.input_tokens) + SUM(rc.cache_creation_tokens)) * 100, 1)
+                WHEN COALESCE(ra.recent_cache_read, 0) + COALESCE(ra.recent_input, 0) + COALESCE(ra.recent_cache_creation, 0) > 0
+                THEN ROUND(ra.recent_cache_read::numeric /
+                     (ra.recent_cache_read + ra.recent_input + ra.recent_cache_creation) * 100, 1)
                 ELSE NULL
             END                                                                              AS recent_cache_hit_rate
         FROM ranked r
-        LEFT JOIN recent rc ON rc.account_id = r.account_id AND rc.model = r.model
+        LEFT JOIN recent_agg ra ON ra.account_id = r.account_id AND ra.model = r.model
         WHERE r.rn <= $1
-        GROUP BY r.account_id, r.account_name, r.grp, r.model
+        GROUP BY r.account_id, r.account_name, r.grp, r.model,
+                 ra.recent_requests, ra.recent_ttft_avg, ra.recent_ttft_p90, ra.recent_dur_avg,
+                 ra.recent_otps_avg, ra.recent_otps_p10,
+                 ra.recent_cache_read, ra.recent_input, ra.recent_cache_creation
         ORDER BY COUNT(*) DESC, r.account_id, r.model
     """
 

@@ -15,6 +15,7 @@ const showReports = computed(() => isReporter())
         <RouterLink to="/admin/reports">管理报表</RouterLink>
       </template>
       <template v-if="showAdmin">
+        <RouterLink to="/admin/reports-full">管理报表(完整)</RouterLink>
         <RouterLink to="/admin/channel-status">渠道状态</RouterLink>
         <RouterLink to="/admin/user-trend">用户趋势</RouterLink>
         <RouterLink to="/admin/account-latency">账号延迟</RouterLink>

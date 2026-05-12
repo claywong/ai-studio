@@ -422,6 +422,78 @@ function fmtDate(s: string | null) {
         <section class="section-card table-section">
           <div class="section-heading">
             <div>
+              <h2>账号分组统计</h2>
+              <span>{{ accountGroups.length }} 个账号组</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-name">账号组</th>
+                  <th class="col-num">账号数</th>
+                  <th class="col-num">请求数</th>
+                  <th class="col-num">总 Tokens</th>
+                  <th class="col-num">输入 / 输出</th>
+                  <th class="col-num">缓存 创建 / 命中</th>
+                  <th class="col-num">成本($)</th>
+                  <th class="col-date">最后使用</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!hasAccountData">
+                  <td colspan="8">
+                    <div class="empty-table">暂无账号分组数据</div>
+                  </td>
+                </tr>
+                <template v-else v-for="group in accountGroups" :key="group.group_name">
+                  <tr class="group-row">
+                    <td class="col-name">
+                      <div class="group-cell">
+                        <button
+                          class="expand-button"
+                          type="button"
+                          :aria-expanded="isGroupExpanded(group.group_name)"
+                          @click="toggleGroup(group.group_name)"
+                        >
+                          <span class="expand-caret" :class="{ open: isGroupExpanded(group.group_name) }"></span>
+                          <span class="group-name">{{ group.group_name }}</span>
+                        </button>
+                        <span class="badge">{{ group.account_count }}</span>
+                      </div>
+                    </td>
+                    <td class="col-num">{{ group.account_count }}</td>
+                    <td class="col-num">{{ group.total_requests.toLocaleString() }}</td>
+                    <td class="col-num">{{ fmt(group.input_tokens + group.output_tokens + (group.cache_creation_tokens ?? 0) + (group.cache_read_tokens ?? 0)) }}</td>
+                    <td class="col-num muted">{{ fmt(group.input_tokens) }} / {{ fmt(group.output_tokens) }}</td>
+                    <td class="col-num muted">{{ fmt(group.cache_creation_tokens ?? 0) }} / {{ fmt(group.cache_read_tokens ?? 0) }}</td>
+                    <td class="col-num cost">${{ group.total_cost.toFixed(2) }}</td>
+                    <td class="col-date muted">{{ fmtDate(group.last_used_at) }}</td>
+                  </tr>
+                  <template v-if="isGroupExpanded(group.group_name)">
+                    <tr v-for="acc in group.accounts" :key="acc.id" class="account-row">
+                      <td class="col-name account-name">
+                        <span class="status-dot" :class="acc.status === 'active' ? 'active' : 'error'"></span>
+                        <span>{{ acc.name }}</span>
+                        <span class="platform-tag">{{ acc.platform }}</span>
+                      </td>
+                      <td class="col-num muted">—</td>
+                      <td class="col-num">{{ acc.requests.toLocaleString() }}</td>
+                      <td class="col-num">{{ fmt(acc.input_tokens + acc.output_tokens + (acc.cache_creation_tokens ?? 0) + (acc.cache_read_tokens ?? 0)) }}</td>
+                      <td class="col-num muted">{{ fmt(acc.input_tokens) }} / {{ fmt(acc.output_tokens) }}</td>
+                      <td class="col-num muted">{{ fmt(acc.cache_creation_tokens ?? 0) }} / {{ fmt(acc.cache_read_tokens ?? 0) }}</td>
+                      <td class="col-num">${{ Number(acc.total_cost).toFixed(2) }}</td>
+                      <td class="col-date muted">{{ fmtDate(acc.last_used_at) }}</td>
+                    </tr>
+                  </template>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="section-card table-section">
+          <div class="section-heading">
+            <div>
               <h2>用户使用情况</h2>
               <span>{{ userBreakdown.length }} 个用户 · {{ periodLabel }}</span>
             </div>

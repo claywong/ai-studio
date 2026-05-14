@@ -190,10 +190,10 @@ function fmtCacheHitRate(rate: number, sampleCount: number): string {
 
 function cacheHitRateClass(rate: number, sampleCount: number): string {
   if (!sampleCount) return ''
-  if (rate >= 0.8) return 'ttft-good'
-  if (rate >= 0.5) return 'ttft-ok'
-  if (rate >= 0.2) return 'ttft-warn'
-  return ''
+  if (rate >= 0.9) return 'ttft-good'
+  if (rate >= 0.85) return 'ttft-ok'
+  if (rate >= 0.8) return 'ttft-warn'
+  return 'ttft-bad'
 }
 
 onMounted(() => {

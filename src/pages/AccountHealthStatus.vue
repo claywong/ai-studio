@@ -25,6 +25,8 @@ interface HealthStats {
   otps_avg: number
   tcp_conn_avg_ms: number
   ttfb_avg_ms: number
+  cache_hit_rate_avg: number
+  cache_hit_sample_count: number
   verdict: string
   verdict_reason: string
   window_seconds: number
@@ -181,6 +183,19 @@ function ttfbClass(ms: number): string {
   return 'ttft-bad'
 }
 
+function fmtCacheHitRate(rate: number, sampleCount: number): string {
+  if (!sampleCount) return '-'
+  return (rate * 100).toFixed(0) + '%'
+}
+
+function cacheHitRateClass(rate: number, sampleCount: number): string {
+  if (!sampleCount) return ''
+  if (rate >= 0.8) return 'ttft-good'
+  if (rate >= 0.5) return 'ttft-ok'
+  if (rate >= 0.2) return 'ttft-warn'
+  return ''
+}
+
 onMounted(() => {
   void load()
   timer = setInterval(() => void load(), 60 * 1000)
@@ -289,6 +304,7 @@ onUnmounted(() => {
           <th>TTFB</th>
           <th>TTFT</th>
           <th>OTPs (tok/s)</th>
+          <th>缓存命中率</th>
           <th>原因</th>
         </tr>
       </thead>
@@ -329,6 +345,9 @@ onUnmounted(() => {
             {{ row.health ? fmtMs(row.health.ttft_avg_ms) : '-' }}
           </td>
           <td class="col-num">{{ row.health ? fmtOtps(row.health.otps_avg) : '-' }}</td>
+          <td class="col-num" :class="cacheHitRateClass(row.health?.cache_hit_rate_avg ?? 0, row.health?.cache_hit_sample_count ?? 0)">
+            {{ row.health ? fmtCacheHitRate(row.health.cache_hit_rate_avg, row.health.cache_hit_sample_count) : '-' }}
+          </td>
           <td class="col-reason">{{ row.health?.verdict_reason || '' }}</td>
         </tr>
       </tbody>

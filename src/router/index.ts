@@ -10,14 +10,36 @@ import AccountUsageTimeline from '../pages/AccountUsageTimeline.vue'
 import AccountHealthStatus from '../pages/AccountHealthStatus.vue'
 import UsageLogs from '../pages/UsageLogs.vue'
 
-// AI工作组推广小组 成员邮箱白名单（可访问 /images 和 /admin/reports）
+// AI工作组全面推广Leader 群全员
 const REPORTER_EMAILS = new Set([
-  'xiqiang@g7.com.cn',
-  'liuyunyang@g7.com.cn',
-  'wangzhong@g7.com.cn',
-  'wanghao_cd@g7.com.cn',
+  'caozhen@g7.com.cn',
   'denglei@g7.com.cn',
+  'ganchongzhi@g7.com.cn',
   'guijiabin@g7.com.cn',
+  'houjuyi@g7.com.cn',
+  'kangguanlin@g7.com.cn',
+  'kongqingquan@g7.com.cn',
+  'lianjiao@g7.com.cn',
+  'libiqing02@g7.com.cn',
+  'ligaokai@g7.com.cn',
+  'lijinhong@g7.com.cn',
+  'liuli@g7.com.cn',
+  'liuqian01@g7.com.cn',
+  'liuxulong@g7.com.cn',
+  'liuyunyang@g7.com.cn',
+  'lufenggang@g7.com.cn',
+  'luoxuan@g7.com.cn',
+  'majianqiang@g7.com.cn',
+  'tangsiyuan@g7.com.cn',
+  'wangfangzhou@g7.com.cn',
+  'wanghao_cd@g7.com.cn',
+  'wangzhenghua@g7.com.cn',
+  'wangzhong@g7.com.cn',
+  'xiongzhonghe@g7.com.cn',
+  'xiqiang@g7.com.cn',
+  'xudianyang@g7.com.cn',
+  'yanhuangen@g7.com.cn',
+  'zhanggongrong@g7.com.cn',
 ])
 
 export function isAdmin(): boolean {

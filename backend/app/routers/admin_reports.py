@@ -170,26 +170,79 @@ async def get_accounts(
     start, end = _parse_dates(start_date, end_date)
     settings = get_settings()
     sql = """
-        WITH stats AS (
+        WITH model_stats AS (
             SELECT
-                a.id,
-                COALESCE(a.name, '未知账号-' || ul.account_id::text)  AS name,
-                COALESCE(a.platform, '')                              AS platform,
-                COALESCE(a.status, 'deleted')                         AS status,
+                ul.account_id,
+                COALESCE(a.name, '未知账号-' || ul.account_id::text)       AS account_name,
+                COALESCE(REGEXP_REPLACE(a.name, '[-_].*$', ''), '已删除')  AS grp,
+                COALESCE(a.platform, '')                                    AS platform,
+                COALESCE(a.status, 'deleted')                               AS status,
                 a.last_used_at,
                 a.expires_at,
-                COALESCE(REGEXP_REPLACE(a.name, '[-_].*$', ''), '已删除') AS grp,
-                COUNT(ul.id)                                           AS requests,
+                ul.model,
+                COUNT(ul.id)                                                AS requests,
                 COALESCE(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0)), 0) AS total_cost,
-                COALESCE(SUM(ul.input_tokens), 0)              AS input_tokens,
-                COALESCE(SUM(ul.output_tokens), 0)             AS output_tokens,
-                COALESCE(SUM(ul.cache_creation_tokens), 0)     AS cache_creation_tokens,
-                COALESCE(SUM(ul.cache_read_tokens), 0)         AS cache_read_tokens
+                COALESCE(SUM(ul.input_tokens), 0)                          AS input_tokens,
+                COALESCE(SUM(ul.output_tokens), 0)                         AS output_tokens,
+                COALESCE(SUM(ul.cache_creation_tokens), 0)                 AS cache_creation_tokens,
+                COALESCE(SUM(ul.cache_read_tokens), 0)                     AS cache_read_tokens,
+                ROUND(AVG(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0))::int AS ttft_avg,
+                ROUND(AVG(
+                    CASE WHEN ul.duration_ms > 0
+                    THEN ul.output_tokens::numeric / (ul.duration_ms / 1000.0) END
+                )::numeric, 2) AS otps_avg,
+                ROUND(AVG(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0))::numeric, 8) AS cost_avg
             FROM usage_logs ul
             LEFT JOIN accounts a ON a.id = ul.account_id
             WHERE ul.created_at >= $1
               AND ul.created_at < $2::date + interval '1 day'
-            GROUP BY a.id, a.name, a.platform, a.status, a.last_used_at, a.expires_at, ul.account_id
+            GROUP BY ul.account_id, a.name, a.platform, a.status, a.last_used_at, a.expires_at, ul.model
+        ),
+        account_stats AS (
+            SELECT
+                account_id,
+                MAX(account_name)  AS account_name,
+                MAX(grp)           AS grp,
+                MAX(platform)      AS platform,
+                MAX(status)        AS status,
+                MAX(last_used_at)  AS last_used_at,
+                MAX(expires_at)    AS expires_at,
+                SUM(requests)      AS requests,
+                SUM(total_cost)    AS total_cost,
+                SUM(input_tokens)  AS input_tokens,
+                SUM(output_tokens) AS output_tokens,
+                SUM(cache_creation_tokens) AS cache_creation_tokens,
+                SUM(cache_read_tokens)     AS cache_read_tokens,
+                CASE
+                    WHEN SUM(cache_read_tokens) + SUM(input_tokens) + SUM(cache_creation_tokens) > 0
+                    THEN ROUND(SUM(cache_read_tokens)::numeric /
+                         (SUM(cache_read_tokens) + SUM(input_tokens) + SUM(cache_creation_tokens)) * 100, 1)
+                    ELSE NULL
+                END AS cache_hit_rate,
+                ROUND(AVG(ttft_avg) FILTER (WHERE ttft_avg IS NOT NULL))::int AS ttft_avg,
+                ROUND(AVG(otps_avg) FILTER (WHERE otps_avg IS NOT NULL)::numeric, 2) AS otps_avg,
+                ROUND(AVG(cost_avg) FILTER (WHERE cost_avg IS NOT NULL)::numeric, 8) AS cost_avg,
+                JSON_AGG(
+                    JSON_BUILD_OBJECT(
+                        'model',                   model,
+                        'requests',                requests,
+                        'total_cost',              ROUND(total_cost::numeric, 4),
+                        'input_tokens',            input_tokens,
+                        'output_tokens',           output_tokens,
+                        'cache_creation_tokens',   cache_creation_tokens,
+                        'cache_read_tokens',       cache_read_tokens,
+                        'cache_hit_rate',          CASE
+                            WHEN cache_read_tokens + input_tokens + cache_creation_tokens > 0
+                            THEN ROUND(cache_read_tokens::numeric /
+                                 (cache_read_tokens + input_tokens + cache_creation_tokens) * 100, 1)
+                            ELSE NULL END,
+                        'ttft_avg',  ttft_avg,
+                        'otps_avg',  otps_avg,
+                        'cost_avg',  cost_avg
+                    ) ORDER BY requests DESC
+                ) AS models
+            FROM model_stats
+            GROUP BY account_id
         )
         SELECT
             grp                                  AS group_name,
@@ -200,24 +253,38 @@ async def get_accounts(
             SUM(output_tokens)                   AS output_tokens,
             SUM(cache_creation_tokens)           AS cache_creation_tokens,
             SUM(cache_read_tokens)               AS cache_read_tokens,
+            CASE
+                WHEN SUM(cache_read_tokens) + SUM(input_tokens) + SUM(cache_creation_tokens) > 0
+                THEN ROUND(SUM(cache_read_tokens)::numeric /
+                     (SUM(cache_read_tokens) + SUM(input_tokens) + SUM(cache_creation_tokens)) * 100, 1)
+                ELSE NULL
+            END AS cache_hit_rate,
+            ROUND(AVG(ttft_avg) FILTER (WHERE ttft_avg IS NOT NULL))::int AS ttft_avg,
+            ROUND(AVG(otps_avg) FILTER (WHERE otps_avg IS NOT NULL)::numeric, 2) AS otps_avg,
+            ROUND(AVG(cost_avg) FILTER (WHERE cost_avg IS NOT NULL)::numeric, 8) AS cost_avg,
             MAX(last_used_at)                    AS last_used_at,
             JSON_AGG(
                 JSON_BUILD_OBJECT(
-                    'id',          id,
-                    'name',        name,
+                    'id',          account_id,
+                    'name',        account_name,
                     'platform',    platform,
                     'status',      status,
-                    'requests',      requests,
-                    'total_cost',    ROUND(total_cost::numeric, 4),
+                    'requests',    requests,
+                    'total_cost',  ROUND(total_cost::numeric, 4),
                     'input_tokens',            input_tokens,
                     'output_tokens',           output_tokens,
                     'cache_creation_tokens',   cache_creation_tokens,
                     'cache_read_tokens',       cache_read_tokens,
-                    'last_used_at',  last_used_at,
-                    'expires_at',    expires_at
+                    'cache_hit_rate',          cache_hit_rate,
+                    'ttft_avg',    ttft_avg,
+                    'otps_avg',    otps_avg,
+                    'cost_avg',    cost_avg,
+                    'last_used_at', last_used_at,
+                    'expires_at',   expires_at,
+                    'models',       models
                 ) ORDER BY requests DESC
             ) AS accounts
-        FROM stats
+        FROM account_stats
         GROUP BY grp
         ORDER BY total_requests DESC
     """
@@ -243,6 +310,10 @@ async def get_accounts(
             "output_tokens": row["output_tokens"],
             "cache_creation_tokens": row["cache_creation_tokens"],
             "cache_read_tokens": row["cache_read_tokens"],
+            "cache_hit_rate": float(row["cache_hit_rate"]) if row["cache_hit_rate"] is not None else None,
+            "ttft_avg": row["ttft_avg"],
+            "otps_avg": float(row["otps_avg"]) if row["otps_avg"] is not None else None,
+            "cost_avg": float(row["cost_avg"]) if row["cost_avg"] is not None else None,
             "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
             "accounts": accounts,
         })

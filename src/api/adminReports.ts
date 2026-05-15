@@ -49,6 +49,20 @@ export interface ModelsData {
   models: ModelItem[]
 }
 
+export interface AccountModelItem {
+  model: string
+  requests: number
+  total_cost: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  cache_hit_rate: number | null
+  ttft_avg: number | null
+  otps_avg: number | null
+  cost_avg: number | null
+}
+
 export interface AccountItem {
   id: number
   name: string
@@ -60,8 +74,13 @@ export interface AccountItem {
   output_tokens: number
   cache_creation_tokens: number
   cache_read_tokens: number
+  cache_hit_rate: number | null
+  ttft_avg: number | null
+  otps_avg: number | null
+  cost_avg: number | null
   last_used_at: string | null
   expires_at: string | null
+  models: AccountModelItem[]
 }
 
 export interface AccountGroup {
@@ -73,6 +92,10 @@ export interface AccountGroup {
   output_tokens: number
   cache_creation_tokens: number
   cache_read_tokens: number
+  cache_hit_rate: number | null
+  ttft_avg: number | null
+  otps_avg: number | null
+  cost_avg: number | null
   last_used_at: string | null
   accounts: AccountItem[]
 }

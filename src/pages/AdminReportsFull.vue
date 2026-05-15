@@ -8,6 +8,7 @@ import { computed, onMounted, ref } from 'vue'
 import {
   fetchAccounts, fetchModels, fetchOverview, fetchTrend, fetchUserBreakdown,
   type AccountGroup, type DateRange, type ModelItem, type OverviewData, type TrendData, type UserBreakdownItem,
+  type AccountItem,
 } from '../api/adminReports'
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
@@ -63,6 +64,7 @@ const trendData     = ref<TrendData | null>(null)
 const modelsData    = ref<ModelItem[]>([])
 const accountGroups = ref<AccountGroup[]>([])
 const expandedGroups = ref<Set<string>>(new Set())
+const expandedAccounts = ref<Set<number>>(new Set())
 const userBreakdown = ref<UserBreakdownItem[]>([])
 const userPage = ref(1)
 const userPageSize = 300
@@ -72,16 +74,22 @@ const lastUpdatedAt = ref('')
 
 function toggleGroup(name: string) {
   const next = new Set(expandedGroups.value)
-  if (next.has(name)) {
-    next.delete(name)
-  } else {
-    next.add(name)
-  }
+  if (next.has(name)) { next.delete(name) } else { next.add(name) }
   expandedGroups.value = next
 }
 
 function isGroupExpanded(name: string) {
   return expandedGroups.value.has(name)
+}
+
+function toggleAccount(id: number) {
+  const next = new Set(expandedAccounts.value)
+  if (next.has(id)) { next.delete(id) } else { next.add(id) }
+  expandedAccounts.value = next
+}
+
+function isAccountExpanded(id: number) {
+  return expandedAccounts.value.has(id)
 }
 
 async function loadAll() {
@@ -323,6 +331,48 @@ function fmtDate(s: string | null) {
   if (!s) return '—'
   return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(s))
 }
+
+function fmtOtps(v: number | null) {
+  if (v == null) return '—'
+  return v.toFixed(1) + ' t/s'
+}
+
+function fmtRate(v: number | null) {
+  if (v == null) return '—'
+  return v.toFixed(1) + '%'
+}
+
+function fmtCost(v: number | null) {
+  if (v == null) return '—'
+  if (v < 0.001) return '$' + v.toFixed(6)
+  if (v < 0.01) return '$' + v.toFixed(5)
+  return '$' + v.toFixed(4)
+}
+
+function fmtTtft(ms: number | null) {
+  if (ms == null) return '—'
+  if (ms >= 1000) return (ms / 1000).toFixed(1) + 's'
+  return ms + 'ms'
+}
+
+function cacheRateClass(rate: number | null) {
+  if (rate == null) return ''
+  if (rate >= 90) return 'c-good'
+  if (rate >= 85) return 'c-ok'
+  if (rate >= 80) return 'c-warn'
+  return 'c-bad'
+}
+
+function ttftClass(ms: number | null) {
+  if (ms == null) return ''
+  if (ms < 1000) return 'c-good'
+  if (ms < 3000) return 'c-ok'
+  if (ms < 8000) return 'c-warn'
+  return 'c-bad'
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _AccUsed = AccountItem
 </script>
 
 <template>
@@ -430,23 +480,27 @@ function fmtDate(s: string | null) {
             <table>
               <thead>
                 <tr>
-                  <th class="col-name">账号组</th>
+                  <th class="col-name">账号组 / 账号 / 模型</th>
                   <th class="col-num">账号数</th>
                   <th class="col-num">请求数</th>
                   <th class="col-num">总 Tokens</th>
                   <th class="col-num">输入 / 输出</th>
-                  <th class="col-num">缓存 创建 / 命中</th>
-                  <th class="col-num">成本($)</th>
+                  <th class="col-num">缓存率</th>
+                  <th class="col-num">TTFT 均值</th>
+                  <th class="col-num">OTPS 均值</th>
+                  <th class="col-num">均次成本</th>
+                  <th class="col-num">总成本($)</th>
                   <th class="col-date">最后使用</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!hasAccountData">
-                  <td colspan="8">
+                  <td colspan="11">
                     <div class="empty-table">暂无账号分组数据</div>
                   </td>
                 </tr>
                 <template v-else v-for="group in accountGroups" :key="group.group_name">
+                  <!-- 组行 -->
                   <tr class="group-row">
                     <td class="col-name">
                       <div class="group-cell">
@@ -466,25 +520,52 @@ function fmtDate(s: string | null) {
                     <td class="col-num">{{ group.total_requests.toLocaleString() }}</td>
                     <td class="col-num">{{ fmt(group.input_tokens + group.output_tokens + (group.cache_creation_tokens ?? 0) + (group.cache_read_tokens ?? 0)) }}</td>
                     <td class="col-num muted">{{ fmt(group.input_tokens) }} / {{ fmt(group.output_tokens) }}</td>
-                    <td class="col-num muted">{{ fmt(group.cache_creation_tokens ?? 0) }} / {{ fmt(group.cache_read_tokens ?? 0) }}</td>
+                    <td class="col-num" :class="cacheRateClass(group.cache_hit_rate)">{{ fmtRate(group.cache_hit_rate) }}</td>
+                    <td class="col-num" :class="ttftClass(group.ttft_avg)">{{ fmtTtft(group.ttft_avg) }}</td>
+                    <td class="col-num muted">{{ fmtOtps(group.otps_avg) }}</td>
+                    <td class="col-num muted">{{ fmtCost(group.cost_avg) }}</td>
                     <td class="col-num cost">${{ group.total_cost.toFixed(2) }}</td>
                     <td class="col-date muted">{{ fmtDate(group.last_used_at) }}</td>
                   </tr>
+                  <!-- 账号行 -->
                   <template v-if="isGroupExpanded(group.group_name)">
-                    <tr v-for="acc in group.accounts" :key="acc.id" class="account-row">
-                      <td class="col-name account-name">
-                        <span class="status-dot" :class="acc.status === 'active' ? 'active' : 'error'"></span>
-                        <span>{{ acc.name }}</span>
-                        <span class="platform-tag">{{ acc.platform }}</span>
-                      </td>
-                      <td class="col-num muted">—</td>
-                      <td class="col-num">{{ acc.requests.toLocaleString() }}</td>
-                      <td class="col-num">{{ fmt(acc.input_tokens + acc.output_tokens + (acc.cache_creation_tokens ?? 0) + (acc.cache_read_tokens ?? 0)) }}</td>
-                      <td class="col-num muted">{{ fmt(acc.input_tokens) }} / {{ fmt(acc.output_tokens) }}</td>
-                      <td class="col-num muted">{{ fmt(acc.cache_creation_tokens ?? 0) }} / {{ fmt(acc.cache_read_tokens ?? 0) }}</td>
-                      <td class="col-num">${{ Number(acc.total_cost).toFixed(2) }}</td>
-                      <td class="col-date muted">{{ fmtDate(acc.last_used_at) }}</td>
-                    </tr>
+                    <template v-for="acc in group.accounts" :key="acc.id">
+                      <tr class="account-row" @click="toggleAccount(acc.id)">
+                        <td class="col-name account-name">
+                          <span class="expand-caret-sm" :class="{ open: isAccountExpanded(acc.id) }"></span>
+                          <span class="status-dot" :class="acc.status === 'active' ? 'active' : 'error'"></span>
+                          <span>{{ acc.name }}</span>
+                          <span class="platform-tag">{{ acc.platform }}</span>
+                          <span v-if="acc.models && acc.models.length > 1" class="model-count-tag">{{ acc.models.length }}模型</span>
+                        </td>
+                        <td class="col-num muted">—</td>
+                        <td class="col-num">{{ acc.requests.toLocaleString() }}</td>
+                        <td class="col-num">{{ fmt(acc.input_tokens + acc.output_tokens + (acc.cache_creation_tokens ?? 0) + (acc.cache_read_tokens ?? 0)) }}</td>
+                        <td class="col-num muted">{{ fmt(acc.input_tokens) }} / {{ fmt(acc.output_tokens) }}</td>
+                        <td class="col-num" :class="cacheRateClass(acc.cache_hit_rate)">{{ fmtRate(acc.cache_hit_rate) }}</td>
+                        <td class="col-num" :class="ttftClass(acc.ttft_avg)">{{ fmtTtft(acc.ttft_avg) }}</td>
+                        <td class="col-num muted">{{ fmtOtps(acc.otps_avg) }}</td>
+                        <td class="col-num muted">{{ fmtCost(acc.cost_avg) }}</td>
+                        <td class="col-num">${{ Number(acc.total_cost).toFixed(2) }}</td>
+                        <td class="col-date muted">{{ fmtDate(acc.last_used_at) }}</td>
+                      </tr>
+                      <!-- 模型行 -->
+                      <template v-if="isAccountExpanded(acc.id) && acc.models && acc.models.length > 1">
+                        <tr v-for="m in acc.models" :key="m.model" class="model-row">
+                          <td class="col-name model-name">↳ {{ m.model }}</td>
+                          <td class="col-num muted">—</td>
+                          <td class="col-num">{{ m.requests.toLocaleString() }}</td>
+                          <td class="col-num">{{ fmt(m.input_tokens + m.output_tokens + (m.cache_creation_tokens ?? 0) + (m.cache_read_tokens ?? 0)) }}</td>
+                          <td class="col-num muted">{{ fmt(m.input_tokens) }} / {{ fmt(m.output_tokens) }}</td>
+                          <td class="col-num" :class="cacheRateClass(m.cache_hit_rate)">{{ fmtRate(m.cache_hit_rate) }}</td>
+                          <td class="col-num" :class="ttftClass(m.ttft_avg)">{{ fmtTtft(m.ttft_avg) }}</td>
+                          <td class="col-num muted">{{ fmtOtps(m.otps_avg) }}</td>
+                          <td class="col-num muted">{{ fmtCost(m.cost_avg) }}</td>
+                          <td class="col-num muted">${{ Number(m.total_cost).toFixed(2) }}</td>
+                          <td class="col-date muted">—</td>
+                        </tr>
+                      </template>
+                    </template>
                   </template>
                 </template>
               </tbody>
@@ -914,6 +995,14 @@ tbody tr:last-child td {
   font-size: 12px;
 }
 
+.account-row {
+  cursor: pointer;
+}
+
+.account-row:hover td {
+  background: #f0f6ff;
+}
+
 .group-cell {
   display: inline-flex;
   max-width: 100%;
@@ -972,7 +1061,10 @@ tbody tr:last-child td {
 }
 
 .account-name {
-  padding-left: 38px;
+  padding-left: 28px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .status-dot {
@@ -1004,6 +1096,50 @@ tbody tr:last-child td {
 .cost {
   color: #b45309;
   font-weight: 700;
+}
+
+/* 颜色着色 */
+td.c-good { color: #16a34a; font-weight: 600; }
+td.c-ok   { color: #65a30d; font-weight: 600; }
+td.c-warn { color: #d97706; font-weight: 600; }
+td.c-bad  { color: #dc2626; font-weight: 600; }
+
+/* 模型展开行 */
+.model-row td {
+  height: 34px;
+  color: #64748b;
+  background: #f8fbff;
+  font-size: 12px;
+}
+
+.model-name {
+  padding-left: 56px !important;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* 账号行展开箭头 */
+.expand-caret-sm {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-right: 1.5px solid #94a3b8;
+  border-bottom: 1.5px solid #94a3b8;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.expand-caret-sm.open { transform: rotate(45deg); }
+
+.model-count-tag {
+  margin-left: 5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #64748b;
+  background: #f1f5f9;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .empty-panel,

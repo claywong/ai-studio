@@ -10,6 +10,7 @@ export interface ModelLatency {
   otps_avg: number | null
   otps_p10: number | null
   cache_hit_rate: number | null
+  cost_avg: number | null
   recent_requests: number
   recent_ttft_avg: number | null
   recent_ttft_p90: number | null
@@ -17,6 +18,7 @@ export interface ModelLatency {
   recent_otps_avg: number | null
   recent_otps_p10: number | null
   recent_cache_hit_rate: number | null
+  recent_cost_avg: number | null
 }
 
 export interface AccountLatency {

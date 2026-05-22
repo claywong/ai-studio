@@ -51,6 +51,7 @@ async def require_admin(
 
 
 REPORTER_EMAILS: frozenset[str] = frozenset([
+    "bairuixue@g7.com.cn",
     "caozhen@g7.com.cn",
     "denglei@g7.com.cn",
     "ganchongzhi@g7.com.cn",

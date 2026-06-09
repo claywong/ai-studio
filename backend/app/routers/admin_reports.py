@@ -563,6 +563,23 @@ async def get_user_breakdown(
         "/admin/dashboard/user-breakdown",
         {"start_date": str(start), "end_date": str(end), "timezone": timezone, "limit": 300},
     )
+    users = (data or {}).get("users", [])
+    if users:
+        user_ids = [u["user_id"] for u in users if u.get("user_id")]
+        settings = get_settings()
+        try:
+            conn = await asyncpg.connect(settings.database_url)
+            try:
+                rows = await conn.fetch(
+                    "SELECT id, username FROM users WHERE id = ANY($1)", user_ids
+                )
+                username_map = {row["id"]: row["username"] or "" for row in rows}
+            finally:
+                await conn.close()
+        except Exception:
+            username_map = {}
+        for u in users:
+            u["username"] = username_map.get(u.get("user_id"), "")
     return data
 
 

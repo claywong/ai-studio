@@ -416,6 +416,7 @@ function fmtDate(s: string | null) {
             <table>
               <thead>
                 <tr>
+                  <th class="col-username">用户名</th>
                   <th class="col-name">用户</th>
                   <th class="col-num">请求数</th>
                   <th class="col-num">总 Token</th>
@@ -425,9 +426,10 @@ function fmtDate(s: string | null) {
               </thead>
               <tbody>
                 <tr v-if="!userBreakdown.length">
-                  <td colspan="5"><div class="empty-table">暂无数据</div></td>
+                  <td colspan="6"><div class="empty-table">暂无数据</div></td>
                 </tr>
                 <tr v-for="u in userPagedData" :key="u.user_id">
+                  <td class="col-username muted">{{ u.username || '—' }}</td>
                   <td class="col-name">{{ u.email }}</td>
                   <td class="col-num">{{ u.requests.toLocaleString() }}</td>
                   <td class="col-num">{{ fmt(u.total_tokens) }}</td>
@@ -803,6 +805,7 @@ th {
 .col-num  { text-align: right; }
 .col-date { text-align: right; white-space: nowrap; }
 .col-name { min-width: 240px; }
+.col-username { min-width: 120px; }
 
 td {
   height: 44px;

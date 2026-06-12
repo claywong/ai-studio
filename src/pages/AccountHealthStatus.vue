@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { api } from '../api/client'
 
 interface AccountItem {
@@ -24,7 +24,6 @@ interface HealthStats {
   ttft_avg_ms: number
   otps_avg: number
   tcp_conn_avg_ms: number
-  ttfb_avg_ms: number
   cache_hit_rate_avg: number
   cache_hit_sample_count: number
   verdict: string
@@ -35,6 +34,26 @@ interface HealthStats {
 interface AccountRow extends AccountItem {
   health: HealthStats | null
   healthLoading: boolean
+  quality: QualityItem | null
+  qualities: QualityItem[]
+  expanded: boolean
+}
+
+interface QualityItem {
+  account_id: number
+  model: string
+  score: number
+  ttft_sample_count: number
+  ttft_avg_ms: number
+  ttft_p90_ms: number
+  ttft_eff_ms: number
+  otps_sample_count: number
+  otps_avg: number
+  cache_hit_sample_count: number
+  cache_hit_rate_avg: number
+  ttft_bucket: number
+  otps_bucket: number
+  cache_hit_bucket: number
 }
 
 const rows = ref<AccountRow[]>([])
@@ -46,7 +65,6 @@ const filterSchedulable = ref('')
 const filterVerdict = ref('')
 const filterGroup = ref('')
 const allGroups = ref<{ id: number; name: string }[]>([])
-let timer: ReturnType<typeof setInterval> | null = null
 
 async function fetchAccounts(): Promise<AccountItem[]> {
   const res = await api.get('/admin/reports/accounts-list')
@@ -62,12 +80,35 @@ async function fetchHealth(accountId: number): Promise<HealthStats | null> {
   }
 }
 
+async function fetchQuality(): Promise<QualityItem[]> {
+  try {
+    const res = await api.get('/admin/reports/scheduler-quality')
+    return (res.data ?? []) as QualityItem[]
+  } catch {
+    return []
+  }
+}
+
+// 按 account_id 分组所有 model 的质量数据，每组内按样本数降序
+function groupQuality(list: QualityItem[]): Map<number, QualityItem[]> {
+  const map = new Map<number, QualityItem[]>()
+  for (const q of list) {
+    const arr = map.get(q.account_id)
+    if (arr) arr.push(q)
+    else map.set(q.account_id, [q])
+  }
+  for (const arr of map.values()) {
+    arr.sort((a, b) => b.ttft_sample_count - a.ttft_sample_count)
+  }
+  return map
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const accounts = await fetchAccounts()
-    accounts.sort((a, b) => a.priority - b.priority)
+    const [accounts, qualityList] = await Promise.all([fetchAccounts(), fetchQuality()])
+    const qualityMap = groupQuality(qualityList)
 
     // 收集所有分组
     const groupMap = new Map<number, string>()
@@ -79,7 +120,17 @@ async function load() {
       .sort((a, b) => a.name.localeCompare(b.name))
 
     // 先渲染账户列表，health 异步填充
-    rows.value = accounts.map((a) => ({ ...a, health: null, healthLoading: true }))
+    rows.value = accounts.map((a) => {
+      const qs = qualityMap.get(a.id) ?? []
+      return {
+        ...a,
+        health: null,
+        healthLoading: true,
+        quality: qs[0] ?? null,
+        qualities: qs,
+        expanded: false,
+      }
+    })
 
     await Promise.all(
       rows.value.map(async (row) => {
@@ -87,6 +138,9 @@ async function load() {
         row.healthLoading = false
       }),
     )
+
+    // 按请求数量降序
+    rows.value.sort((a, b) => (b.health?.req_count ?? 0) - (a.health?.req_count ?? 0))
 
     lastUpdated.value = new Date().toLocaleTimeString()
   } catch (e: unknown) {
@@ -144,7 +198,8 @@ function statusClass(s: string): string {
 function fmtMs(ms: number): string {
   if (!ms) return '-'
   if (ms >= 1000) return (ms / 1000).toFixed(1) + 's'
-  return ms + 'ms'
+  if (ms < 10) return ms.toFixed(1) + 'ms'
+  return Math.round(ms) + 'ms'
 }
 
 function fmtOtps(v: number): string {
@@ -152,11 +207,22 @@ function fmtOtps(v: number): string {
   return v.toFixed(1)
 }
 
+// OTPs 越高越好，以 80 tok/s 业内满分为基准分档
+function otpsClass(v: number | undefined): string {
+  if (!v) return ''
+  if (v >= 60) return 'ttft-good'
+  if (v >= 40) return 'ttft-ok'
+  if (v >= 25) return 'ttft-warn'
+  return 'ttft-bad'
+}
+
+// 错误率越低越好，四档与其他指标统一着色
 function errRateClass(rate: number, count: number): string {
   if (count === 0) return ''
-  if (rate >= 0.5) return 'err-high'
-  if (rate >= 0.2) return 'err-mid'
-  return ''
+  if (rate <= 0.01) return 'ttft-good'
+  if (rate < 0.05) return 'ttft-ok'
+  if (rate < 0.2) return 'ttft-warn'
+  return 'ttft-bad'
 }
 
 function ttftClass(ms: number): string {
@@ -175,14 +241,6 @@ function tcpConnClass(ms: number): string {
   return 'ttft-bad'
 }
 
-function ttfbClass(ms: number): string {
-  if (!ms) return ''
-  if (ms < 1000) return 'ttft-good'
-  if (ms < 3000) return 'ttft-ok'
-  if (ms < 6000) return 'ttft-warn'
-  return 'ttft-bad'
-}
-
 function fmtCacheHitRate(rate: number, sampleCount: number): string {
   if (!sampleCount) return '-'
   return (rate * 100).toFixed(0) + '%'
@@ -196,13 +254,27 @@ function cacheHitRateClass(rate: number, sampleCount: number): string {
   return 'ttft-bad'
 }
 
+// 调度总分 0~1，越高越好
+function fmtScore(score: number | undefined): string {
+  if (score === undefined || score === null) return '-'
+  return score.toFixed(2)
+}
+
+function scoreClass(score: number | undefined): string {
+  if (score === undefined || score === null) return ''
+  if (score >= 0.8) return 'ttft-good'
+  if (score >= 0.65) return 'ttft-ok'
+  if (score >= 0.5) return 'ttft-warn'
+  return 'ttft-bad'
+}
+
+function toggleExpand(row: AccountRow) {
+  if (row.qualities.length === 0) return
+  row.expanded = !row.expanded
+}
+
 onMounted(() => {
   void load()
-  timer = setInterval(() => void load(), 60 * 1000)
-})
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
 })
 </script>
 
@@ -251,7 +323,7 @@ onUnmounted(() => {
       <button class="btn-refresh" :disabled="loading" @click="load">
         {{ loading ? '加载中…' : '刷新' }}
       </button>
-      <span v-if="lastUpdated" class="updated">{{ lastUpdated }} · 每分钟自动刷新</span>
+      <span v-if="lastUpdated" class="updated">更新于 {{ lastUpdated }}</span>
     </div>
 
     <!-- 统计卡片 -->
@@ -301,7 +373,6 @@ onUnmounted(() => {
           <th>错误</th>
           <th>错误率</th>
           <th>TCP连接</th>
-          <th>TTFB</th>
           <th>TTFT</th>
           <th>OTPs (tok/s)</th>
           <th>缓存命中率</th>
@@ -309,13 +380,17 @@ onUnmounted(() => {
         </tr>
       </thead>
       <tbody>
+        <template v-for="row in filtered" :key="row.id">
         <tr
-          v-for="row in filtered"
-          :key="row.id"
-          :class="{ 'row-error': row.status === 'error', 'row-unschedulable': !row.schedulable }"
+          :class="{ 'row-error': row.status === 'error', 'row-unschedulable': !row.schedulable, 'row-expandable': row.qualities.length > 0 }"
+          @click="toggleExpand(row)"
         >
           <td class="col-id">{{ row.id }}</td>
-          <td class="col-name">{{ row.name }}</td>
+          <td class="col-name">
+            <span v-if="row.qualities.length > 0" class="expand-icon">{{ row.expanded ? '▾' : '▸' }}</span>
+            {{ row.name }}
+            <span v-if="row.qualities.length > 0" class="model-more">{{ row.qualities.length }} model</span>
+          </td>
           <td class="col-platform">{{ row.platform || '-' }}</td>
           <td><span :class="['badge', statusClass(row.status)]">{{ row.status }}</span></td>
           <td class="col-center">
@@ -328,7 +403,7 @@ onUnmounted(() => {
               {{ row.health?.verdict || 'OK' }}
             </span>
           </td>
-          <td class="col-num">{{ row.health?.req_count ?? '-' }}</td>
+          <td class="col-num"><span class="req-val">{{ row.health?.req_count ?? '-' }}</span></td>
           <td class="col-num" :class="(row.health?.err_count ?? 0) > 0 ? 'err-val' : ''">
             {{ row.health?.err_count ?? '-' }}
           </td>
@@ -338,18 +413,38 @@ onUnmounted(() => {
           <td class="col-num" :class="tcpConnClass(row.health?.tcp_conn_avg_ms ?? 0)">
             {{ row.health ? fmtMs(row.health.tcp_conn_avg_ms) : '-' }}
           </td>
-          <td class="col-num" :class="ttfbClass(row.health?.ttfb_avg_ms ?? 0)">
-            {{ row.health ? fmtMs(row.health.ttfb_avg_ms) : '-' }}
-          </td>
           <td class="col-num" :class="ttftClass(row.health?.ttft_avg_ms ?? 0)">
             {{ row.health ? fmtMs(row.health.ttft_avg_ms) : '-' }}
           </td>
-          <td class="col-num">{{ row.health ? fmtOtps(row.health.otps_avg) : '-' }}</td>
+          <td class="col-num" :class="otpsClass(row.health?.otps_avg)">{{ row.health ? fmtOtps(row.health.otps_avg) : '-' }}</td>
           <td class="col-num" :class="cacheHitRateClass(row.health?.cache_hit_rate_avg ?? 0, row.health?.cache_hit_sample_count ?? 0)">
             {{ row.health ? fmtCacheHitRate(row.health.cache_hit_rate_avg, row.health.cache_hit_sample_count) : '-' }}
           </td>
           <td class="col-reason">{{ row.health?.verdict_reason || '' }}</td>
         </tr>
+
+        <!-- 展开：该账号每个 model 的调度质量窗口明细 -->
+        <template v-if="row.expanded">
+        <tr v-for="q in row.qualities" :key="`${row.id}-${q.model}`" class="sub-row">
+          <td></td>
+          <td class="col-name sub-model">
+            <span class="model-tag" :title="q.model">{{ q.model }}</span>
+          </td>
+          <td colspan="5" class="sub-label">调度质量窗口</td>
+          <td class="col-num sub-score-label">总分</td>
+          <td class="col-num" :class="scoreClass(q.score)">{{ fmtScore(q.score) }}</td>
+          <td></td>
+          <td class="col-num" :class="ttftClass(q.ttft_eff_ms)">
+            {{ fmtMs(q.ttft_eff_ms) }}<span class="q-sample">/{{ q.ttft_sample_count }}</span>
+          </td>
+          <td class="col-num" :class="otpsClass(q.otps_avg)">{{ fmtOtps(q.otps_avg) }}</td>
+          <td class="col-num" :class="cacheHitRateClass(q.cache_hit_rate_avg, q.cache_hit_sample_count)">
+            {{ fmtCacheHitRate(q.cache_hit_rate_avg, q.cache_hit_sample_count) }}
+          </td>
+          <td></td>
+        </tr>
+        </template>
+        </template>
       </tbody>
     </table>
 
@@ -496,6 +591,27 @@ select {
 .col-num { text-align: right; font-variant-numeric: tabular-nums; }
 .col-center { text-align: center; }
 .col-reason { color: #94a3b8; font-size: 11px; max-width: 220px; }
+.col-model { white-space: nowrap; }
+.model-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-variant-numeric: tabular-nums;
+}
+.q-empty { color: #cbd5e1; }
+.q-sample { color: #cbd5e1; font-size: 10px; margin-left: 1px; }
+
+.expand-icon { color: #94a3b8; font-size: 10px; margin-right: 4px; display: inline-block; width: 8px; }
+.model-more { color: #94a3b8; font-size: 10px; margin-left: 4px; }
+.row-expandable { cursor: pointer; }
+
+.sub-row td { background: #fafbfc; border-bottom: 1px solid #f1f5f9; padding: 5px 12px; }
+.sub-row .sub-model { padding-left: 24px; }
+.sub-label { color: #cbd5e1; font-size: 11px; text-align: right; }
+.sub-score-label { color: #94a3b8; font-size: 11px; }
 
 /* badge */
 .badge {
@@ -519,6 +635,7 @@ select {
 .sched-no  { color: #cbd5e1; }
 
 /* 数值着色 */
+.req-val  { color: #2563eb; font-weight: 600; }
 .err-val  { color: #dc2626; }
 .err-high { color: #dc2626; font-weight: 600; }
 .err-mid  { color: #d97706; }

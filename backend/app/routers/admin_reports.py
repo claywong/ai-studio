@@ -617,6 +617,22 @@ async def get_account_health_stats(
     return await _admin_get_simple(f"/admin/accounts/{account_id}/health-stats")
 
 
+@router.get("/scheduler-quality")
+async def get_scheduler_quality(
+    _: Annotated[dict, Depends(require_admin_or_reporter)],
+    account_id: int | None = Query(None),
+    model: str | None = Query(None),
+):
+    """透传上游 /admin/scheduler/quality，返回 account+model 维度的质量快照列表。"""
+    params: dict[str, Any] = {}
+    if account_id:
+        params["account_id"] = account_id
+    if model:
+        params["model"] = model
+    data = await _admin_get_simple("/admin/scheduler/quality", params or None)
+    return data or []
+
+
 @router.get("/accounts/{account_id}/scheduled-test-plans")
 async def get_account_scheduled_plans(
     account_id: int,

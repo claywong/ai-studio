@@ -590,6 +590,16 @@ async def get_accounts_list(
 ):
     data = await _admin_get_simple("/admin/accounts", {"page": 1, "page_size": page_size})
     items = data.get("items", []) if data else []
+
+    def _model_mapping_keys(a: dict) -> list[str] | None:
+        """账号支持的模型映射键（用于判断是否支持某模型）。
+        None 表示未配置映射 = 支持所有模型；仅暴露键名，不暴露 credentials 其他敏感字段。"""
+        cred = a.get("credentials") or {}
+        mapping = cred.get("model_mapping")
+        if not isinstance(mapping, dict) or not mapping:
+            return None
+        return list(mapping.keys())
+
     return [
         {
             "id": a["id"],
@@ -597,6 +607,10 @@ async def get_accounts_list(
             "priority": a.get("priority", 0),
             "status": a.get("status", ""),
             "platform": a.get("platform", ""),
+            "rate_multiplier": a.get("rate_multiplier"),
+            "concurrency": a.get("concurrency", 0),
+            "current_concurrency": a.get("current_concurrency", 0),
+            "model_mapping_keys": _model_mapping_keys(a),
             "groups": [{"id": g["id"], "name": g["name"]} for g in (a.get("groups") or [])],
             "schedulable": a.get("schedulable", False),
             "temp_unschedulable_until": a.get("temp_unschedulable_until"),
@@ -676,7 +690,7 @@ async def get_user_usage_logs(
 async def get_groups(
     _: Annotated[dict, Depends(require_admin_or_reporter)],
 ):
-    data = await _admin_get_raw("/admin/groups/all")
+    data = await _admin_get_simple("/admin/groups/all")
     items = data if isinstance(data, list) else (data.get("items", []) if isinstance(data, dict) else [])
     return [{"id": g["id"], "name": g["name"]} for g in items]
 

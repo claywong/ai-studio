@@ -8,6 +8,7 @@ import AccountLatency from '../pages/AccountLatency.vue'
 import AccountMonitorChart from '../pages/AccountMonitorChart.vue'
 import AccountUsageTimeline from '../pages/AccountUsageTimeline.vue'
 import AccountHealthStatus from '../pages/AccountHealthStatus.vue'
+import SchedulerPreview from '../pages/SchedulerPreview.vue'
 import UsageLogs from '../pages/UsageLogs.vue'
 
 // AI工作组全面推广Leader 群全员
@@ -106,6 +107,11 @@ const router = createRouter({
     {
       path: '/admin/account-health',
       component: AccountHealthStatus,
+      meta: { requiresAdmin: true },
+    },
+    {
+      path: '/admin/scheduler-preview',
+      component: SchedulerPreview,
       meta: { requiresAdmin: true },
     },
     {

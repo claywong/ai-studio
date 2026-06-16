@@ -1,0 +1,14 @@
+[Unit]
+Description=Archive request_logs to Tencent COS (hourly)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=wangzhong
+# 必须在 backend 目录运行，才能 import app.* 和 scripts.*
+WorkingDirectory=/home/wangzhong/ai-studio/backend
+EnvironmentFile=/home/wangzhong/ai-studio/.env
+ExecStart=/home/wangzhong/ai-studio/.venv/bin/python -m scripts.archive_request_logs
+# 单次运行最长 50 分钟，避免与下一个整点任务重叠
+TimeoutStartSec=3000

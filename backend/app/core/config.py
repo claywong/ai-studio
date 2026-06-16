@@ -35,6 +35,19 @@ class Settings(BaseSettings):
     lark_app_id: str = ""
     lark_app_secret: str = ""
 
+    # Tencent Cloud COS — request_logs 归档
+    cos_secret_id: str = ""
+    cos_secret_key: str = ""
+    cos_region: str = "ap-shanghai"
+    cos_bucket: str = ""
+    cos_endpoint: str = ""  # 留空则由 SDK 按 region/bucket 自动拼接
+
+    # request_logs 归档行为
+    archive_prefix: str = "request-logs"
+    archive_retention_hours: int = 48
+    archive_max_rows_per_part: int = 50000
+    archive_delete_batch_size: int = 5000
+
 
 @lru_cache
 def get_settings() -> Settings:

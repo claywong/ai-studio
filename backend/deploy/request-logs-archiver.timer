@@ -1,0 +1,11 @@
+[Unit]
+Description=Run request_logs COS archiver every hour
+
+[Timer]
+# 每小时第 5 分钟触发，归档上一个完整小时，避开整点写入高峰
+OnCalendar=*-*-* *:05:00
+# 错过的周期（如机器关机）开机后补跑一次
+Persistent=true
+
+[Install]
+WantedBy=timers.target

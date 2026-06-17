@@ -110,15 +110,15 @@ const trendOption = computed(() => {
       formatter: (params: { seriesName: string; value: number; seriesIndex: number }[]) => {
         const fmtT = (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(2)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : `${(v/1e3).toFixed(1)}K`
         const date = (params[0] as any)?.axisValue ?? ''
-        const tokenSeries = params.filter(p => p.seriesName !== '成本($)')
-        const costSeries = params.find(p => p.seriesName === '成本($)')
+        const tokenSeries = params.filter(p => p.seriesName !== '成本(¥)')
+        const costSeries = params.find(p => p.seriesName === '成本(¥)')
         const total = tokenSeries.reduce((s, p) => s + (p.value || 0), 0)
         const lines = tokenSeries.map(p => `${p.seriesName}: ${fmtT(p.value)}`).join('<br/>')
-        const costLine = costSeries ? `<br/>成本: $${Number(costSeries.value).toFixed(2)}` : ''
+        const costLine = costSeries ? `<br/>成本: ¥${Number(costSeries.value).toFixed(2)}` : ''
         return `${date}<br/>${lines}<br/>Total: ${fmtT(total)}${costLine}`
       },
     },
-    legend: { data: ['Input', 'Output', 'Cache Write', 'Cache Read', '成本($)'], textStyle: { color: '#64748b' }, bottom: 0 },
+    legend: { data: ['Input', 'Output', 'Cache Write', 'Cache Read', '成本(¥)'], textStyle: { color: '#64748b' }, bottom: 0 },
     grid: { left: 64, right: 54, top: 40, bottom: 48 },
     xAxis: {
       type: 'category',
@@ -137,9 +137,9 @@ const trendOption = computed(() => {
       },
       {
         type: 'value',
-        name: '成本($)',
+        name: '成本(¥)',
         nameTextStyle: { color: '#64748b' },
-        axisLabel: { color: '#64748b', formatter: (v: number) => `$${v.toFixed(0)}` },
+        axisLabel: { color: '#64748b', formatter: (v: number) => `¥${v.toFixed(0)}` },
         splitLine: { show: false },
       },
     ],
@@ -177,7 +177,7 @@ const trendOption = computed(() => {
         barMaxWidth: 32,
       },
       {
-        name: '成本($)',
+        name: '成本(¥)',
         type: 'line',
         yAxisIndex: 1,
         data: items.map(i => Number(i.actual_cost.toFixed(2))),
@@ -211,7 +211,7 @@ const modelOption = computed(() => {
         const cost = costMap[model] ?? 0
         const total = params.reduce((s, p) => s + (p.value || 0), 0)
         const lines = params.map(p => `${p.seriesName}: ${fmtV(p.value)}`).join('<br/>')
-        return `${model}<br/>${lines}<br/>Total: ${fmtV(total)}<br/>成本: $${Number(cost).toFixed(2)}`
+        return `${model}<br/>${lines}<br/>Total: ${fmtV(total)}<br/>成本: ¥${Number(cost).toFixed(2)}`
       },
     },
     legend: { data: ['Input', 'Output', 'Cache Write', 'Cache Read'], textStyle: { color: '#64748b' }, top: 0 },
@@ -378,7 +378,7 @@ function fmtDate(s: string | null) {
           </div>
           <div class="stat-card warning">
             <span class="card-label">周期总成本</span>
-            <strong>${{ totalCost }}</strong>
+            <strong>¥{{ totalCost }}</strong>
           </div>
         </section>
 
@@ -420,8 +420,8 @@ function fmtDate(s: string | null) {
                   <th class="col-name">用户</th>
                   <th class="col-num">请求数</th>
                   <th class="col-num">总 Token</th>
-                  <th class="col-num">费用($)</th>
-                  <th class="col-num">成本($)</th>
+                  <th class="col-num">费用(¥)</th>
+                  <th class="col-num">成本(¥)</th>
                 </tr>
               </thead>
               <tbody>
@@ -433,8 +433,8 @@ function fmtDate(s: string | null) {
                   <td class="col-name">{{ u.email }}</td>
                   <td class="col-num">{{ u.requests.toLocaleString() }}</td>
                   <td class="col-num">{{ fmt(u.total_tokens) }}</td>
-                  <td class="col-num cost">${{ u.actual_cost.toFixed(2) }}</td>
-                  <td class="col-num muted">${{ u.account_cost.toFixed(2) }}</td>
+                  <td class="col-num cost">¥{{ u.actual_cost.toFixed(2) }}</td>
+                  <td class="col-num muted">¥{{ u.account_cost.toFixed(2) }}</td>
                 </tr>
               </tbody>
             </table>

@@ -191,7 +191,9 @@ async def get_accounts(
                     CASE WHEN ul.duration_ms > 0
                     THEN ul.output_tokens::numeric / (ul.duration_ms / 1000.0) END
                 )::numeric, 2) AS otps_avg,
-                ROUND(AVG(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0))::numeric, 8) AS cost_avg
+                CASE WHEN COUNT(ul.id) > 0
+                    THEN ROUND(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0))::numeric / COUNT(ul.id), 8)
+                    ELSE NULL END AS cost_avg
             FROM usage_logs ul
             LEFT JOIN accounts a ON a.id = ul.account_id
             WHERE ul.created_at >= $1
@@ -221,7 +223,9 @@ async def get_accounts(
                 END AS cache_hit_rate,
                 ROUND(AVG(ttft_avg) FILTER (WHERE ttft_avg IS NOT NULL))::int AS ttft_avg,
                 ROUND(AVG(otps_avg) FILTER (WHERE otps_avg IS NOT NULL)::numeric, 2) AS otps_avg,
-                ROUND(AVG(cost_avg) FILTER (WHERE cost_avg IS NOT NULL)::numeric, 8) AS cost_avg,
+                CASE WHEN SUM(requests) > 0
+                    THEN ROUND(SUM(total_cost)::numeric / SUM(requests), 8)
+                    ELSE NULL END AS cost_avg,
                 JSON_AGG(
                     JSON_BUILD_OBJECT(
                         'model',                   model,
@@ -261,7 +265,9 @@ async def get_accounts(
             END AS cache_hit_rate,
             ROUND(AVG(ttft_avg) FILTER (WHERE ttft_avg IS NOT NULL))::int AS ttft_avg,
             ROUND(AVG(otps_avg) FILTER (WHERE otps_avg IS NOT NULL)::numeric, 2) AS otps_avg,
-            ROUND(AVG(cost_avg) FILTER (WHERE cost_avg IS NOT NULL)::numeric, 8) AS cost_avg,
+            CASE WHEN SUM(requests) > 0
+                THEN ROUND(SUM(total_cost)::numeric / SUM(requests), 8)
+                ELSE NULL END AS cost_avg,
             MAX(last_used_at)                    AS last_used_at,
             JSON_AGG(
                 JSON_BUILD_OBJECT(

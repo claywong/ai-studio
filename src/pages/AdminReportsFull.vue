@@ -6,8 +6,8 @@ import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import { computed, onMounted, ref } from 'vue'
 import {
-  fetchAccounts, fetchModels, fetchOverview, fetchTrend, fetchUserBreakdown,
-  type AccountGroup, type DateRange, type ModelItem, type OverviewData, type TrendData, type UserBreakdownItem,
+  fetchAccounts, fetchAccountGroups, fetchModels, fetchOverview, fetchTrend,
+  type AccountGroup, type DateRange, type GroupBreakdown, type ModelItem, type OverviewData, type TrendData,
   type AccountItem,
 } from '../api/adminReports'
 
@@ -63,13 +63,10 @@ const overview      = ref<OverviewData | null>(null)
 const trendData     = ref<TrendData | null>(null)
 const modelsData    = ref<ModelItem[]>([])
 const accountGroups = ref<AccountGroup[]>([])
+const groupBreakdown = ref<GroupBreakdown[]>([])
 const expandedGroups = ref<Set<string>>(new Set())
 const expandedAccounts = ref<Set<number>>(new Set())
-const userBreakdown = ref<UserBreakdownItem[]>([])
-const userPage = ref(1)
-const userPageSize = 300
-const userPagedData = computed(() => userBreakdown.value.slice((userPage.value - 1) * userPageSize, userPage.value * userPageSize))
-const userTotalPages = computed(() => Math.ceil(userBreakdown.value.length / userPageSize))
+const expandedBreakdownGroups = ref<Set<string>>(new Set())
 const lastUpdatedAt = ref('')
 
 function toggleGroup(name: string) {
@@ -92,23 +89,32 @@ function isAccountExpanded(id: number) {
   return expandedAccounts.value.has(id)
 }
 
+function toggleBreakdownGroup(name: string) {
+  const next = new Set(expandedBreakdownGroups.value)
+  if (next.has(name)) { next.delete(name) } else { next.add(name) }
+  expandedBreakdownGroups.value = next
+}
+
+function isBreakdownGroupExpanded(name: string) {
+  return expandedBreakdownGroups.value.has(name)
+}
+
 async function loadAll() {
   loading.value = true
   error.value = ''
   try {
-    const [ov, tr, md, ac, ub] = await Promise.all([
+    const [ov, tr, md, ac, gb] = await Promise.all([
       fetchOverview(range.value),
       fetchTrend(range.value),
       fetchModels(range.value),
       fetchAccounts(range.value),
-      fetchUserBreakdown(range.value),
+      fetchAccountGroups(range.value),
     ])
     overview.value      = ov
     trendData.value     = tr
     modelsData.value    = md.models ?? []
     accountGroups.value = ac
-    userBreakdown.value = (ub?.users ?? []).sort((a, b) => b.actual_cost - a.actual_cost)
-    userPage.value = 1
+    groupBreakdown.value = gb ?? []
     lastUpdatedAt.value = new Date().toISOString()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } }; message?: string }
@@ -321,6 +327,7 @@ const isInitialLoading = computed(() =>
 const hasTrendData = computed(() => (trendData.value?.trend ?? []).length > 0)
 const hasModelData = computed(() => modelsData.value.length > 0)
 const hasAccountData = computed(() => accountGroups.value.length > 0)
+const hasBreakdownData = computed(() => groupBreakdown.value.length > 0)
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -472,6 +479,83 @@ type _AccUsed = AccountItem
         <section class="section-card table-section">
           <div class="section-heading">
             <div>
+              <h2>账号分组消耗</h2>
+              <span>{{ groupBreakdown.length }} 个分组 · 按分组聚合</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-name">分组 / 模型</th>
+                  <th class="col-num">账号数</th>
+                  <th class="col-num">请求数</th>
+                  <th class="col-num">总 Tokens</th>
+                  <th class="col-num">输入 / 输出</th>
+                  <th class="col-num">缓存率</th>
+                  <th class="col-num">TTFT 均值</th>
+                  <th class="col-num">OTPS 均值</th>
+                  <th class="col-num">均次成本</th>
+                  <th class="col-num">总成本(¥)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!hasBreakdownData">
+                  <td colspan="10">
+                    <div class="empty-table">暂无分组数据</div>
+                  </td>
+                </tr>
+                <template v-else v-for="grp in groupBreakdown" :key="grp.group_name">
+                  <!-- 分组行 -->
+                  <tr class="group-row">
+                    <td class="col-name">
+                      <div class="group-cell">
+                        <button
+                          class="expand-button"
+                          type="button"
+                          :aria-expanded="isBreakdownGroupExpanded(grp.group_name)"
+                          @click="toggleBreakdownGroup(grp.group_name)"
+                        >
+                          <span class="expand-caret" :class="{ open: isBreakdownGroupExpanded(grp.group_name) }"></span>
+                          <span class="group-name">{{ grp.group_name }}</span>
+                        </button>
+                        <span class="badge">{{ grp.model_count }}模型</span>
+                      </div>
+                    </td>
+                    <td class="col-num">{{ grp.account_count }}</td>
+                    <td class="col-num">{{ grp.total_requests.toLocaleString() }}</td>
+                    <td class="col-num">{{ fmt(grp.input_tokens + grp.output_tokens + (grp.cache_creation_tokens ?? 0) + (grp.cache_read_tokens ?? 0)) }}</td>
+                    <td class="col-num muted">{{ fmt(grp.input_tokens) }} / {{ fmt(grp.output_tokens) }}</td>
+                    <td class="col-num" :class="cacheRateClass(grp.cache_hit_rate)">{{ fmtRate(grp.cache_hit_rate) }}</td>
+                    <td class="col-num" :class="ttftClass(grp.ttft_avg)">{{ fmtTtft(grp.ttft_avg) }}</td>
+                    <td class="col-num muted">{{ fmtOtps(grp.otps_avg) }}</td>
+                    <td class="col-num muted">{{ fmtCost(grp.cost_avg) }}</td>
+                    <td class="col-num cost">¥{{ grp.total_cost.toFixed(2) }}</td>
+                  </tr>
+                  <!-- 模型行 -->
+                  <template v-if="isBreakdownGroupExpanded(grp.group_name)">
+                    <tr v-for="m in grp.models" :key="m.model" class="model-row">
+                      <td class="col-name model-name">↳ {{ m.model }}</td>
+                      <td class="col-num muted">—</td>
+                      <td class="col-num">{{ m.requests.toLocaleString() }}</td>
+                      <td class="col-num">{{ fmt(m.input_tokens + m.output_tokens + (m.cache_creation_tokens ?? 0) + (m.cache_read_tokens ?? 0)) }}</td>
+                      <td class="col-num muted">{{ fmt(m.input_tokens) }} / {{ fmt(m.output_tokens) }}</td>
+                      <td class="col-num" :class="cacheRateClass(m.cache_hit_rate)">{{ fmtRate(m.cache_hit_rate) }}</td>
+                      <td class="col-num" :class="ttftClass(m.ttft_avg)">{{ fmtTtft(m.ttft_avg) }}</td>
+                      <td class="col-num muted">{{ fmtOtps(m.otps_avg) }}</td>
+                      <td class="col-num muted">{{ fmtCost(m.cost_avg) }}</td>
+                      <td class="col-num muted">¥{{ Number(m.total_cost).toFixed(2) }}</td>
+                    </tr>
+                  </template>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section-card table-section">
+          <div class="section-heading">
+            <div>
               <h2>账号分组统计</h2>
               <span>{{ accountGroups.length }} 个账号组</span>
             </div>
@@ -550,7 +634,7 @@ type _AccUsed = AccountItem
                         <td class="col-date muted">{{ fmtDate(acc.last_used_at) }}</td>
                       </tr>
                       <!-- 模型行 -->
-                      <template v-if="isAccountExpanded(acc.id) && acc.models && acc.models.length > 1">
+                      <template v-if="isAccountExpanded(acc.id) && acc.models && acc.models.length >= 1">
                         <tr v-for="m in acc.models" :key="m.model" class="model-row">
                           <td class="col-name model-name">↳ {{ m.model }}</td>
                           <td class="col-num muted">—</td>
@@ -572,74 +656,12 @@ type _AccUsed = AccountItem
             </table>
           </div>
         </section>
-        <section class="section-card table-section">
-          <div class="section-heading">
-            <div>
-              <h2>用户使用情况</h2>
-              <span>{{ userBreakdown.length }} 个用户 · {{ periodLabel }}</span>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th class="col-name">用户</th>
-                  <th class="col-num">请求数</th>
-                  <th class="col-num">总 Token</th>
-                  <th class="col-num">费用(¥)</th>
-                  <th class="col-num">成本(¥)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="!userBreakdown.length">
-                  <td colspan="5"><div class="empty-table">暂无数据</div></td>
-                </tr>
-                <tr v-for="u in userPagedData" :key="u.user_id">
-                  <td class="col-name">{{ u.email }}</td>
-                  <td class="col-num">{{ u.requests.toLocaleString() }}</td>
-                  <td class="col-num">{{ fmt(u.total_tokens) }}</td>
-                  <td class="col-num cost">¥{{ u.actual_cost.toFixed(2) }}</td>
-                  <td class="col-num muted">¥{{ u.account_cost.toFixed(2) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div v-if="userTotalPages > 1" class="pagination">
-            <button :disabled="userPage === 1" @click="userPage--">‹</button>
-            <span>{{ userPage }} / {{ userTotalPages }}</span>
-            <button :disabled="userPage === userTotalPages" @click="userPage++">›</button>
-          </div>
-        </section>
       </template>
     </main>
   </div>
 </template>
 
 <style scoped>
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 12px 0 4px;
-  font-size: 13px;
-  color: #64748b;
-}
-.pagination button {
-  width: 28px;
-  height: 28px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  color: #334155;
-  transition: background 0.15s;
-}
-.pagination button:hover:not(:disabled) { background: #f1f5f9; }
-.pagination button:disabled { opacity: 0.35; cursor: default; }
-
 .reports-shell {
   min-height: 100vh;
   padding: 0 0 40px;

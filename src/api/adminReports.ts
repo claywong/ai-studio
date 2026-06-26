@@ -129,6 +129,29 @@ export async function fetchAccounts(range: DateRange): Promise<AccountGroup[]> {
   return res.data
 }
 
+export interface GroupBreakdown {
+  group_id: number | null
+  group_name: string
+  account_count: number
+  model_count: number
+  total_requests: number
+  total_cost: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  cache_hit_rate: number | null
+  ttft_avg: number | null
+  otps_avg: number | null
+  cost_avg: number | null
+  models: AccountModelItem[]
+}
+
+export async function fetchAccountGroups(range: DateRange): Promise<GroupBreakdown[]> {
+  const res = await api.get<GroupBreakdown[]>('/admin/reports/account-groups', { params: rangeParams(range) })
+  return res.data
+}
+
 export interface UserBreakdownItem {
   user_id: number
   email: string

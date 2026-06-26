@@ -326,6 +326,119 @@ async def get_accounts(
     return result
 
 
+@router.get("/account-groups")
+async def get_account_groups(
+    _: Annotated[dict, Depends(require_admin)],
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+):
+    """按真实账号分组（usage_logs.group_id → groups.name）聚合用量，展开层为模型。"""
+    start, end = _parse_dates(start_date, end_date)
+    settings = get_settings()
+    sql = """
+        WITH model_stats AS (
+            SELECT
+                ul.group_id,
+                ul.model,
+                COUNT(ul.id)                                               AS requests,
+                COALESCE(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0)), 0) AS total_cost,
+                COALESCE(SUM(ul.input_tokens), 0)                          AS input_tokens,
+                COALESCE(SUM(ul.output_tokens), 0)                         AS output_tokens,
+                COALESCE(SUM(ul.cache_creation_tokens), 0)                 AS cache_creation_tokens,
+                COALESCE(SUM(ul.cache_read_tokens), 0)                     AS cache_read_tokens,
+                ROUND(AVG(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0))::int AS ttft_avg,
+                ROUND(AVG(
+                    CASE WHEN ul.duration_ms > 0
+                    THEN ul.output_tokens::numeric / (ul.duration_ms / 1000.0) END
+                )::numeric, 2) AS otps_avg,
+                CASE WHEN COUNT(ul.id) > 0
+                    THEN ROUND(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0))::numeric / COUNT(ul.id), 8)
+                    ELSE NULL END AS cost_avg,
+                COUNT(DISTINCT ul.account_id)                             AS account_count
+            FROM usage_logs ul
+            WHERE ul.created_at >= $1
+              AND ul.created_at < $2::date + interval '1 day'
+            GROUP BY ul.group_id, ul.model
+        )
+        SELECT
+            ms.group_id                          AS group_id,
+            COALESCE(g.name, '未分组-' || COALESCE(ms.group_id::text, 'null')) AS group_name,
+            SUM(ms.requests)                     AS total_requests,
+            ROUND(SUM(ms.total_cost)::numeric, 4) AS total_cost,
+            SUM(ms.input_tokens)                 AS input_tokens,
+            SUM(ms.output_tokens)                AS output_tokens,
+            SUM(ms.cache_creation_tokens)        AS cache_creation_tokens,
+            SUM(ms.cache_read_tokens)            AS cache_read_tokens,
+            COUNT(DISTINCT ms.model)             AS model_count,
+            MAX(ms.account_count)                AS account_count,
+            CASE
+                WHEN SUM(ms.cache_read_tokens) + SUM(ms.input_tokens) + SUM(ms.cache_creation_tokens) > 0
+                THEN ROUND(SUM(ms.cache_read_tokens)::numeric /
+                     (SUM(ms.cache_read_tokens) + SUM(ms.input_tokens) + SUM(ms.cache_creation_tokens)) * 100, 1)
+                ELSE NULL
+            END AS cache_hit_rate,
+            ROUND(AVG(ms.ttft_avg) FILTER (WHERE ms.ttft_avg IS NOT NULL))::int AS ttft_avg,
+            ROUND(AVG(ms.otps_avg) FILTER (WHERE ms.otps_avg IS NOT NULL)::numeric, 2) AS otps_avg,
+            CASE WHEN SUM(ms.requests) > 0
+                THEN ROUND(SUM(ms.total_cost)::numeric / SUM(ms.requests), 8)
+                ELSE NULL END AS cost_avg,
+            JSON_AGG(
+                JSON_BUILD_OBJECT(
+                    'model',                   ms.model,
+                    'requests',                ms.requests,
+                    'total_cost',              ROUND(ms.total_cost::numeric, 4),
+                    'input_tokens',            ms.input_tokens,
+                    'output_tokens',           ms.output_tokens,
+                    'cache_creation_tokens',   ms.cache_creation_tokens,
+                    'cache_read_tokens',       ms.cache_read_tokens,
+                    'cache_hit_rate',          CASE
+                        WHEN ms.cache_read_tokens + ms.input_tokens + ms.cache_creation_tokens > 0
+                        THEN ROUND(ms.cache_read_tokens::numeric /
+                             (ms.cache_read_tokens + ms.input_tokens + ms.cache_creation_tokens) * 100, 1)
+                        ELSE NULL END,
+                    'ttft_avg',  ms.ttft_avg,
+                    'otps_avg',  ms.otps_avg,
+                    'cost_avg',  ms.cost_avg
+                ) ORDER BY ms.requests DESC
+            ) AS models
+        FROM model_stats ms
+        LEFT JOIN groups g ON g.id = ms.group_id
+        GROUP BY ms.group_id, g.name
+        ORDER BY total_requests DESC
+    """
+    try:
+        conn = await asyncpg.connect(settings.database_url)
+        try:
+            rows = await conn.fetch(sql, start, end)
+        finally:
+            await conn.close()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    result = []
+    for row in rows:
+        models_raw = row["models"]
+        models = json.loads(models_raw) if isinstance(models_raw, str) else models_raw
+        result.append({
+            "group_id": row["group_id"],
+            "group_name": row["group_name"],
+            "account_count": row["account_count"],
+            "model_count": row["model_count"],
+            "total_requests": row["total_requests"],
+            "total_cost": float(row["total_cost"]),
+            "input_tokens": row["input_tokens"],
+            "output_tokens": row["output_tokens"],
+            "cache_creation_tokens": row["cache_creation_tokens"],
+            "cache_read_tokens": row["cache_read_tokens"],
+            "cache_hit_rate": float(row["cache_hit_rate"]) if row["cache_hit_rate"] is not None else None,
+            "ttft_avg": row["ttft_avg"],
+            "otps_avg": float(row["otps_avg"]) if row["otps_avg"] is not None else None,
+            "cost_avg": float(row["cost_avg"]) if row["cost_avg"] is not None else None,
+            "models": models,
+        })
+    return result
+
+
 @router.get("/account-latency")
 async def get_account_latency(
     _: Annotated[dict, Depends(require_admin_or_reporter)],

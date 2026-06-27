@@ -182,11 +182,18 @@ function onParamChange() {
             <thead>
               <tr>
                 <th class="col-name">账号</th>
-                <th colspan="9" class="col-section">最近 {{ limit }} 条</th>
                 <th colspan="7" class="col-section recent">最近 {{ recentMinutes }} 分钟</th>
+                <th colspan="9" class="col-section">最近 {{ limit }} 条</th>
               </tr>
               <tr>
                 <th></th>
+                <th class="recent">请求数</th>
+                <th class="recent">TTFT均值</th>
+                <th class="recent">TTFT P90</th>
+                <th class="recent">总时均值</th>
+                <th class="recent">OTPS均值</th>
+                <th class="recent">缓存率</th>
+                <th class="recent">均次成本</th>
                 <th>请求数</th>
                 <th>TTFT均值</th>
                 <th>TTFT P90</th>
@@ -196,13 +203,6 @@ function onParamChange() {
                 <th>OTPS P10</th>
                 <th>缓存率</th>
                 <th>均次成本</th>
-                <th class="recent">请求数</th>
-                <th class="recent">TTFT均值</th>
-                <th class="recent">TTFT P90</th>
-                <th class="recent">总时均值</th>
-                <th class="recent">OTPS均值</th>
-                <th class="recent">缓存率</th>
-                <th class="recent">均次成本</th>
               </tr>
             </thead>
             <tbody>
@@ -214,6 +214,13 @@ function onParamChange() {
                     <span v-if="acct.models.length > 1" class="model-count">{{ acct.models.length }}模型</span>
                   </td>
                   <template v-if="acct.models.length === 1">
+                    <td class="recent">{{ acct.models[0].recent_requests || '-' }}</td>
+                    <td class="recent" :class="latencyClass(acct.models[0].recent_ttft_avg)">{{ fmt(acct.models[0].recent_ttft_avg) }}</td>
+                    <td class="recent" :class="latencyClass(acct.models[0].recent_ttft_p90)">{{ fmt(acct.models[0].recent_ttft_p90) }}</td>
+                    <td class="recent" :class="latencyClass(acct.models[0].recent_dur_avg)">{{ fmt(acct.models[0].recent_dur_avg) }}</td>
+                    <td class="recent">{{ fmtOtps(acct.models[0].recent_otps_avg) }}</td>
+                    <td class="recent" :class="cacheRateClass(acct.models[0].recent_cache_hit_rate)">{{ fmtRate(acct.models[0].recent_cache_hit_rate) }}</td>
+                    <td class="recent">{{ fmtCost(acct.models[0].recent_cost_avg) }}</td>
                     <td>{{ acct.models[0].requests }}</td>
                     <td :class="latencyClass(acct.models[0].ttft_avg)">{{ fmt(acct.models[0].ttft_avg) }}</td>
                     <td :class="latencyClass(acct.models[0].ttft_p90)">{{ fmt(acct.models[0].ttft_p90) }}</td>
@@ -223,15 +230,15 @@ function onParamChange() {
                     <td>{{ fmtOtps(acct.models[0].otps_p10) }}</td>
                     <td :class="cacheRateClass(acct.models[0].cache_hit_rate)">{{ fmtRate(acct.models[0].cache_hit_rate) }}</td>
                     <td>{{ fmtCost(acct.models[0].cost_avg) }}</td>
-                    <td class="recent">{{ acct.models[0].recent_requests || '-' }}</td>
-                    <td class="recent" :class="latencyClass(acct.models[0].recent_ttft_avg)">{{ fmt(acct.models[0].recent_ttft_avg) }}</td>
-                    <td class="recent" :class="latencyClass(acct.models[0].recent_ttft_p90)">{{ fmt(acct.models[0].recent_ttft_p90) }}</td>
-                    <td class="recent" :class="latencyClass(acct.models[0].recent_dur_avg)">{{ fmt(acct.models[0].recent_dur_avg) }}</td>
-                    <td class="recent">{{ fmtOtps(acct.models[0].recent_otps_avg) }}</td>
-                    <td class="recent" :class="cacheRateClass(acct.models[0].recent_cache_hit_rate)">{{ fmtRate(acct.models[0].recent_cache_hit_rate) }}</td>
-                    <td class="recent">{{ fmtCost(acct.models[0].recent_cost_avg) }}</td>
                   </template>
                   <template v-else>
+                    <td class="recent">{{ accountSummary(acct).recent_requests || '-' }}</td>
+                    <td class="recent" :class="latencyClass(accountSummary(acct).recent_ttft_avg)">{{ fmt(accountSummary(acct).recent_ttft_avg) }}</td>
+                    <td class="recent" :class="latencyClass(accountSummary(acct).recent_ttft_p90)">{{ fmt(accountSummary(acct).recent_ttft_p90) }}</td>
+                    <td class="recent" :class="latencyClass(accountSummary(acct).recent_dur_avg)">{{ fmt(accountSummary(acct).recent_dur_avg) }}</td>
+                    <td class="recent">{{ fmtOtps(accountSummary(acct).recent_otps_avg) }}</td>
+                    <td class="recent" :class="cacheRateClass(accountSummary(acct).recent_cache_hit_rate)">{{ fmtRate(accountSummary(acct).recent_cache_hit_rate) }}</td>
+                    <td class="recent">{{ fmtCost(accountSummary(acct).recent_cost_avg) }}</td>
                     <td>{{ accountSummary(acct).requests }}</td>
                     <td :class="latencyClass(accountSummary(acct).ttft_avg)">{{ fmt(accountSummary(acct).ttft_avg) }}</td>
                     <td :class="latencyClass(accountSummary(acct).ttft_p90)">{{ fmt(accountSummary(acct).ttft_p90) }}</td>
@@ -241,19 +248,19 @@ function onParamChange() {
                     <td>{{ fmtOtps(accountSummary(acct).otps_p10) }}</td>
                     <td :class="cacheRateClass(accountSummary(acct).cache_hit_rate)">{{ fmtRate(accountSummary(acct).cache_hit_rate) }}</td>
                     <td>{{ fmtCost(accountSummary(acct).cost_avg) }}</td>
-                    <td class="recent">{{ accountSummary(acct).recent_requests || '-' }}</td>
-                    <td class="recent" :class="latencyClass(accountSummary(acct).recent_ttft_avg)">{{ fmt(accountSummary(acct).recent_ttft_avg) }}</td>
-                    <td class="recent" :class="latencyClass(accountSummary(acct).recent_ttft_p90)">{{ fmt(accountSummary(acct).recent_ttft_p90) }}</td>
-                    <td class="recent" :class="latencyClass(accountSummary(acct).recent_dur_avg)">{{ fmt(accountSummary(acct).recent_dur_avg) }}</td>
-                    <td class="recent">{{ fmtOtps(accountSummary(acct).recent_otps_avg) }}</td>
-                    <td class="recent" :class="cacheRateClass(accountSummary(acct).recent_cache_hit_rate)">{{ fmtRate(accountSummary(acct).recent_cache_hit_rate) }}</td>
-                    <td class="recent">{{ fmtCost(accountSummary(acct).recent_cost_avg) }}</td>
                   </template>
                 </tr>
                 <!-- 模型展开行 -->
                 <template v-if="expandedAccounts.has(acct.account_id) && acct.models.length > 1">
                   <tr v-for="m in acct.models" :key="m.model" class="model-row">
                     <td class="col-name model-name">↳ {{ m.model }}</td>
+                    <td class="recent">{{ m.recent_requests || '-' }}</td>
+                    <td class="recent" :class="latencyClass(m.recent_ttft_avg)">{{ fmt(m.recent_ttft_avg) }}</td>
+                    <td class="recent" :class="latencyClass(m.recent_ttft_p90)">{{ fmt(m.recent_ttft_p90) }}</td>
+                    <td class="recent" :class="latencyClass(m.recent_dur_avg)">{{ fmt(m.recent_dur_avg) }}</td>
+                    <td class="recent">{{ fmtOtps(m.recent_otps_avg) }}</td>
+                    <td class="recent" :class="cacheRateClass(m.recent_cache_hit_rate)">{{ fmtRate(m.recent_cache_hit_rate) }}</td>
+                    <td class="recent">{{ fmtCost(m.recent_cost_avg) }}</td>
                     <td>{{ m.requests }}</td>
                     <td :class="latencyClass(m.ttft_avg)">{{ fmt(m.ttft_avg) }}</td>
                     <td :class="latencyClass(m.ttft_p90)">{{ fmt(m.ttft_p90) }}</td>
@@ -263,13 +270,6 @@ function onParamChange() {
                     <td>{{ fmtOtps(m.otps_p10) }}</td>
                     <td :class="cacheRateClass(m.cache_hit_rate)">{{ fmtRate(m.cache_hit_rate) }}</td>
                     <td>{{ fmtCost(m.cost_avg) }}</td>
-                    <td class="recent">{{ m.recent_requests || '-' }}</td>
-                    <td class="recent" :class="latencyClass(m.recent_ttft_avg)">{{ fmt(m.recent_ttft_avg) }}</td>
-                    <td class="recent" :class="latencyClass(m.recent_ttft_p90)">{{ fmt(m.recent_ttft_p90) }}</td>
-                    <td class="recent" :class="latencyClass(m.recent_dur_avg)">{{ fmt(m.recent_dur_avg) }}</td>
-                    <td class="recent">{{ fmtOtps(m.recent_otps_avg) }}</td>
-                    <td class="recent" :class="cacheRateClass(m.recent_cache_hit_rate)">{{ fmtRate(m.recent_cache_hit_rate) }}</td>
-                    <td class="recent">{{ fmtCost(m.recent_cost_avg) }}</td>
                   </tr>
                 </template>
               </template>

@@ -466,7 +466,7 @@ async def get_account_latency(
                 COALESCE(ul.cache_read_tokens, 0)                       AS cache_read_tokens,
                 COALESCE(ul.input_tokens, 0)                            AS input_tokens,
                 COALESCE(ul.cache_creation_tokens, 0)                   AS cache_creation_tokens,
-                ul.actual_cost                                          AS account_cost,
+                ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0) AS account_cost,
                 ROW_NUMBER() OVER (PARTITION BY ul.account_id ORDER BY ul.created_at DESC) AS rn
             FROM usage_logs ul
             INNER JOIN accounts a ON a.id = ul.account_id AND a.deleted_at IS NULL
@@ -494,7 +494,7 @@ async def get_account_latency(
                 SUM(COALESCE(ul.cache_read_tokens, 0))                                            AS recent_cache_read,
                 SUM(COALESCE(ul.input_tokens, 0))                                                 AS recent_input,
                 SUM(COALESCE(ul.cache_creation_tokens, 0))                                        AS recent_cache_creation,
-                ROUND(AVG(ul.actual_cost)::numeric, 8)                                            AS recent_cost_avg
+                ROUND(AVG(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0))::numeric, 8) AS recent_cost_avg
             FROM usage_logs ul
             WHERE ul.created_at >= NOW() - ($2 || ' minutes')::interval
               AND ul.duration_ms IS NOT NULL AND ul.duration_ms > 0

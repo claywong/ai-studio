@@ -385,6 +385,7 @@ tbody tr:last-child { border-bottom: none; }
 .acct-row { background: #ffffff; cursor: pointer; }
 .acct-row:hover { background: #f8fafc; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: relative; z-index: 1; }
 .model-row { background: #fafbfd; }
+.model-row:hover { background: #f0f4ff; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: relative; z-index: 1; }
 
 td { padding: 8px 12px; text-align: right; color: #475569; font-size: 13px; }
 td.col-name { text-align: left; color: #0f172a; font-weight: 500; }

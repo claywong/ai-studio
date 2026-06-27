@@ -145,21 +145,21 @@ function onParamChange() {
     <div class="toolbar">
       <span class="title">账号延迟统计</span>
       <label>
-        最近条数
-        <select v-model="limit" @change="onParamChange">
-          <option :value="100">100</option>
-          <option :value="300">300</option>
-          <option :value="500">500</option>
-          <option :value="1000">1000</option>
-        </select>
-      </label>
-      <label>
         实时窗口
         <select v-model="recentMinutes" @change="onParamChange">
           <option :value="5">5分钟</option>
           <option :value="10">10分钟</option>
           <option :value="30">30分钟</option>
           <option :value="60">60分钟</option>
+        </select>
+      </label>
+      <label>
+        最近条数
+        <select v-model="limit" @change="onParamChange">
+          <option :value="100">100</option>
+          <option :value="300">300</option>
+          <option :value="500">500</option>
+          <option :value="1000">1000</option>
         </select>
       </label>
       <button @click="onParamChange">刷新</button>
@@ -206,7 +206,7 @@ function onParamChange() {
               </tr>
             </thead>
             <tbody>
-              <template v-for="acct in grp.accounts" :key="acct.account_id">
+              <template v-for="acct in [...grp.accounts].sort((a, b) => b.models.reduce((s, m) => s + m.recent_requests, 0) - a.models.reduce((s, m) => s + m.recent_requests, 0))" :key="acct.account_id">
                 <tr class="acct-row" @click="toggleAccount(acct.account_id)">
                   <td class="col-name">
                     <span class="chevron">{{ expandedAccounts.has(acct.account_id) ? '▾' : '▸' }}</span>

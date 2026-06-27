@@ -195,7 +195,7 @@ async def get_accounts(
                     THEN ROUND(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0))::numeric / COUNT(ul.id), 8)
                     ELSE NULL END AS cost_avg
             FROM usage_logs ul
-            LEFT JOIN accounts a ON a.id = ul.account_id
+            INNER JOIN accounts a ON a.id = ul.account_id AND a.deleted_at IS NULL
             WHERE ul.created_at >= $1
               AND ul.created_at < $2::date + interval '1 day'
             GROUP BY ul.account_id, a.name, a.platform, a.status, a.last_used_at, a.expires_at, ul.model
@@ -469,7 +469,7 @@ async def get_account_latency(
                 ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0) AS account_cost,
                 ROW_NUMBER() OVER (PARTITION BY ul.account_id ORDER BY ul.created_at DESC) AS rn
             FROM usage_logs ul
-            INNER JOIN accounts a ON a.id = ul.account_id AND a.status != 'deleted'
+            INNER JOIN accounts a ON a.id = ul.account_id AND a.deleted_at IS NULL
             WHERE ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
         ),
         recent_agg AS (

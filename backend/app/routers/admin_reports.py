@@ -471,6 +471,7 @@ async def get_account_latency(
             FROM usage_logs ul
             INNER JOIN accounts a ON a.id = ul.account_id AND a.deleted_at IS NULL
             WHERE ul.duration_ms IS NOT NULL AND ul.duration_ms > 0
+              AND ul.created_at >= NOW() - INTERVAL '7 days'
         ),
         recent_agg AS (
             SELECT

@@ -56,14 +56,6 @@ function accountSummary(acct: AccountLatency) {
   const models = acct.models
   const total = models.reduce((s, m) => s + m.requests, 0)
   const recentTotal = models.reduce((s, m) => s + m.recent_requests, 0)
-  const avg = (vals: (number | null)[]) => {
-    const v = vals.filter((x): x is number => x != null)
-    return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null
-  }
-  const avgFloat = (vals: (number | null)[]) => {
-    const v = vals.filter((x): x is number => x != null)
-    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
-  }
   const p90 = (vals: (number | null)[]) => {
     const v = vals.filter((x): x is number => x != null).sort((a, b) => a - b)
     return v.length ? v[Math.floor(v.length * 0.9)] : null
@@ -73,24 +65,35 @@ function accountSummary(acct: AccountLatency) {
     rates.forEach((r, i) => { if (r != null && weights[i] > 0) { wSum += r * weights[i]; rSum += weights[i] } })
     return rSum > 0 ? Math.round(wSum / rSum * 10) / 10 : null
   }
+  const weightedAvgFloat = (vals: (number | null)[], weights: number[]) => {
+    let wSum = 0, rSum = 0
+    vals.forEach((v, i) => { if (v != null && weights[i] > 0) { wSum += v * weights[i]; rSum += weights[i] } })
+    return rSum > 0 ? wSum / rSum : null
+  }
+  const weightedAvgInt = (vals: (number | null)[], weights: number[]) => {
+    const v = weightedAvgFloat(vals, weights)
+    return v == null ? null : Math.round(v)
+  }
+  const reqs = models.map(m => m.requests)
+  const recentReqs = models.map(m => m.recent_requests)
   return {
     requests: total,
-    ttft_avg: avg(models.map(m => m.ttft_avg)),
+    ttft_avg: weightedAvgInt(models.map(m => m.ttft_avg), reqs),
     ttft_p90: p90(models.flatMap(m => Array(m.requests).fill(m.ttft_p90))),
-    dur_avg: avg(models.map(m => m.dur_avg)),
+    dur_avg: weightedAvgInt(models.map(m => m.dur_avg), reqs),
     dur_p90: p90(models.flatMap(m => Array(m.requests).fill(m.dur_p90))),
-    otps_avg: avgFloat(models.map(m => m.otps_avg)),
-    otps_p10: avgFloat(models.map(m => m.otps_p10)),
-    cache_hit_rate: weightedRate(models.map(m => m.cache_hit_rate), models.map(m => m.requests)),
-    cost_avg: avgFloat(models.map(m => m.cost_avg)),
+    otps_avg: weightedAvgFloat(models.map(m => m.otps_avg), reqs),
+    otps_p10: weightedAvgFloat(models.map(m => m.otps_p10), reqs),
+    cache_hit_rate: weightedRate(models.map(m => m.cache_hit_rate), reqs),
+    cost_avg: weightedAvgFloat(models.map(m => m.cost_avg), reqs),
     recent_requests: recentTotal,
-    recent_ttft_avg: avg(models.map(m => m.recent_ttft_avg)),
+    recent_ttft_avg: weightedAvgInt(models.map(m => m.recent_ttft_avg), recentReqs),
     recent_ttft_p90: p90(models.flatMap(m => Array(m.recent_requests).fill(m.recent_ttft_p90))),
-    recent_dur_avg: avg(models.map(m => m.recent_dur_avg)),
-    recent_otps_avg: avgFloat(models.map(m => m.recent_otps_avg)),
-    recent_otps_p10: avgFloat(models.map(m => m.recent_otps_p10)),
-    recent_cache_hit_rate: weightedRate(models.map(m => m.recent_cache_hit_rate), models.map(m => m.recent_requests)),
-    recent_cost_avg: avgFloat(models.map(m => m.recent_cost_avg)),
+    recent_dur_avg: weightedAvgInt(models.map(m => m.recent_dur_avg), recentReqs),
+    recent_otps_avg: weightedAvgFloat(models.map(m => m.recent_otps_avg), recentReqs),
+    recent_otps_p10: weightedAvgFloat(models.map(m => m.recent_otps_p10), recentReqs),
+    recent_cache_hit_rate: weightedRate(models.map(m => m.recent_cache_hit_rate), recentReqs),
+    recent_cost_avg: weightedAvgFloat(models.map(m => m.recent_cost_avg), recentReqs),
   }
 }
 

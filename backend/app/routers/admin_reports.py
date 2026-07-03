@@ -187,10 +187,17 @@ async def get_accounts(
                 COALESCE(SUM(ul.cache_creation_tokens), 0)                 AS cache_creation_tokens,
                 COALESCE(SUM(ul.cache_read_tokens), 0)                     AS cache_read_tokens,
                 ROUND(AVG(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0))::int AS ttft_avg,
+                COALESCE(SUM(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0), 0)::numeric AS ttft_sum,
+                COUNT(*) FILTER (WHERE ul.first_token_ms > 0)                            AS ttft_count,
                 ROUND(AVG(
                     CASE WHEN ul.duration_ms > 0
                     THEN ul.output_tokens::numeric / (ul.duration_ms / 1000.0) END
                 )::numeric, 2) AS otps_avg,
+                COALESCE(SUM(
+                    CASE WHEN ul.duration_ms > 0
+                    THEN ul.output_tokens::numeric / (ul.duration_ms / 1000.0) END
+                ), 0)::numeric                                                           AS otps_sum,
+                COUNT(*) FILTER (WHERE ul.duration_ms > 0)                               AS otps_count,
                 CASE WHEN COUNT(ul.id) > 0
                     THEN ROUND(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0))::numeric / COUNT(ul.id), 8)
                     ELSE NULL END AS cost_avg
@@ -215,14 +222,22 @@ async def get_accounts(
                 SUM(output_tokens) AS output_tokens,
                 SUM(cache_creation_tokens) AS cache_creation_tokens,
                 SUM(cache_read_tokens)     AS cache_read_tokens,
+                SUM(ttft_sum)              AS ttft_sum,
+                SUM(ttft_count)            AS ttft_count,
+                SUM(otps_sum)              AS otps_sum,
+                SUM(otps_count)            AS otps_count,
                 CASE
                     WHEN SUM(cache_read_tokens) + SUM(input_tokens) + SUM(cache_creation_tokens) > 0
                     THEN ROUND(SUM(cache_read_tokens)::numeric /
                          (SUM(cache_read_tokens) + SUM(input_tokens) + SUM(cache_creation_tokens)) * 100, 1)
                     ELSE NULL
                 END AS cache_hit_rate,
-                ROUND(AVG(ttft_avg) FILTER (WHERE ttft_avg IS NOT NULL))::int AS ttft_avg,
-                ROUND(AVG(otps_avg) FILTER (WHERE otps_avg IS NOT NULL)::numeric, 2) AS otps_avg,
+                CASE WHEN SUM(ttft_count) > 0
+                    THEN ROUND(SUM(ttft_sum) / SUM(ttft_count))::int
+                    ELSE NULL END AS ttft_avg,
+                CASE WHEN SUM(otps_count) > 0
+                    THEN ROUND(SUM(otps_sum) / SUM(otps_count), 2)
+                    ELSE NULL END AS otps_avg,
                 CASE WHEN SUM(requests) > 0
                     THEN ROUND(SUM(total_cost)::numeric / SUM(requests), 8)
                     ELSE NULL END AS cost_avg,
@@ -263,8 +278,12 @@ async def get_accounts(
                      (SUM(cache_read_tokens) + SUM(input_tokens) + SUM(cache_creation_tokens)) * 100, 1)
                 ELSE NULL
             END AS cache_hit_rate,
-            ROUND(AVG(ttft_avg) FILTER (WHERE ttft_avg IS NOT NULL))::int AS ttft_avg,
-            ROUND(AVG(otps_avg) FILTER (WHERE otps_avg IS NOT NULL)::numeric, 2) AS otps_avg,
+            CASE WHEN SUM(ttft_count) > 0
+                THEN ROUND(SUM(ttft_sum) / SUM(ttft_count))::int
+                ELSE NULL END AS ttft_avg,
+            CASE WHEN SUM(otps_count) > 0
+                THEN ROUND(SUM(otps_sum) / SUM(otps_count), 2)
+                ELSE NULL END AS otps_avg,
             CASE WHEN SUM(requests) > 0
                 THEN ROUND(SUM(total_cost)::numeric / SUM(requests), 8)
                 ELSE NULL END AS cost_avg,
@@ -347,10 +366,17 @@ async def get_account_groups(
                 COALESCE(SUM(ul.cache_creation_tokens), 0)                 AS cache_creation_tokens,
                 COALESCE(SUM(ul.cache_read_tokens), 0)                     AS cache_read_tokens,
                 ROUND(AVG(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0))::int AS ttft_avg,
+                COALESCE(SUM(ul.first_token_ms) FILTER (WHERE ul.first_token_ms > 0), 0)::numeric AS ttft_sum,
+                COUNT(*) FILTER (WHERE ul.first_token_ms > 0)                            AS ttft_count,
                 ROUND(AVG(
                     CASE WHEN ul.duration_ms > 0
                     THEN ul.output_tokens::numeric / (ul.duration_ms / 1000.0) END
                 )::numeric, 2) AS otps_avg,
+                COALESCE(SUM(
+                    CASE WHEN ul.duration_ms > 0
+                    THEN ul.output_tokens::numeric / (ul.duration_ms / 1000.0) END
+                ), 0)::numeric                                                           AS otps_sum,
+                COUNT(*) FILTER (WHERE ul.duration_ms > 0)                               AS otps_count,
                 CASE WHEN COUNT(ul.id) > 0
                     THEN ROUND(SUM(ul.total_cost * COALESCE(ul.account_rate_multiplier, 1.0))::numeric / COUNT(ul.id), 8)
                     ELSE NULL END AS cost_avg,
@@ -377,8 +403,12 @@ async def get_account_groups(
                      (SUM(ms.cache_read_tokens) + SUM(ms.input_tokens) + SUM(ms.cache_creation_tokens)) * 100, 1)
                 ELSE NULL
             END AS cache_hit_rate,
-            ROUND(AVG(ms.ttft_avg) FILTER (WHERE ms.ttft_avg IS NOT NULL))::int AS ttft_avg,
-            ROUND(AVG(ms.otps_avg) FILTER (WHERE ms.otps_avg IS NOT NULL)::numeric, 2) AS otps_avg,
+            CASE WHEN SUM(ms.ttft_count) > 0
+                THEN ROUND(SUM(ms.ttft_sum) / SUM(ms.ttft_count))::int
+                ELSE NULL END AS ttft_avg,
+            CASE WHEN SUM(ms.otps_count) > 0
+                THEN ROUND(SUM(ms.otps_sum) / SUM(ms.otps_count), 2)
+                ELSE NULL END AS otps_avg,
             CASE WHEN SUM(ms.requests) > 0
                 THEN ROUND(SUM(ms.total_cost)::numeric / SUM(ms.requests), 8)
                 ELSE NULL END AS cost_avg,

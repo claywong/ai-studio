@@ -81,6 +81,7 @@ REPORTER_EMAILS: frozenset[str] = frozenset([
     "xudianyang@g7.com.cn",
     "yanhuangen@g7.com.cn",
     "zhanggongrong@g7.com.cn",
+    "lianzeng@g7.com.cn",
 ])
 
 

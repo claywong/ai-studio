@@ -23,6 +23,7 @@ const REPORTER_EMAILS = new Set([
   'kangguanlin@g7.com.cn',
   'kongqingquan@g7.com.cn',
   'lianjiao@g7.com.cn',
+  'lianzeng@g7.com.cn',
   'libiqing02@g7.com.cn',
   'ligaokai@g7.com.cn',
   'lijinhong@g7.com.cn',

@@ -51,6 +51,7 @@ def test_row_to_json_roundtrip():
         "session_id": "s1",
         "user_id": 42,
         "email": "a@b.com",
+        "group_name": "team-a",
         "request_body": "你好",
         "response_body": None,
         "created_at": datetime(2026, 6, 16, 8, 30, tzinfo=UTC),
@@ -59,6 +60,7 @@ def test_row_to_json_roundtrip():
     assert obj["request_id"] == "r1"
     assert obj["user_id"] == 42
     assert obj["email"] == "a@b.com"
+    assert obj["group_name"] == "team-a"
     assert obj["request_body"] == "你好"
     assert obj["response_body"] is None
     assert obj["created_at"].startswith("2026-06-16T08:30")
@@ -174,12 +176,13 @@ class FakeUploader:
         self.deleted_objects.append(key)
 
 
-def _row(rid, hour, minute=0, user_id=1):
+def _row(rid, hour, minute=0, user_id=1, group_name="team-a"):
     return {
         "request_id": rid,
         "session_id": "sess",
         "user_id": user_id,
         "email": f"u{user_id}@example.com",
+        "group_name": group_name,
         "request_body": "req-" + rid,
         "response_body": "resp-" + rid,
         "created_at": hour.replace(minute=minute),

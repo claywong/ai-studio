@@ -163,6 +163,7 @@ def _row_to_json(row: asyncpg.Record) -> str:
             "session_id": row["session_id"],
             "user_id": row["user_id"],
             "email": row["email"],
+            "group_name": row["group_name"],
             "created_at": created.astimezone(UTC).isoformat()
             if isinstance(created, datetime)
             else created,
@@ -199,11 +200,25 @@ async def _export_hour_parts(
 
     # 事务内只读游标，按 created_at 升序流式拉取，避免一次性载入内存
     async with conn.transaction():
+        # usage_logs.request_id 与 request_logs.request_id 对应；用 DISTINCT ON
+        # 限定每个 request_id 只取一条（有的接口会写多条 usage_log），并放宽
+        # 时间窗口 ±30 分钟以覆盖 usage_log 与 request_log 落库时间差。
         cursor = conn.cursor(
-            """SELECT rl.request_id, rl.session_id, rl.user_id,
-                      u.email, rl.request_body, rl.response_body, rl.created_at
+            """WITH ul AS (
+                   SELECT DISTINCT ON (request_id) request_id, group_id
+                   FROM usage_logs
+                   WHERE created_at >= $1 - interval '30 min'
+                     AND created_at <  $2 + interval '30 min'
+                     AND request_id IS NOT NULL
+                   ORDER BY request_id, created_at
+               )
+               SELECT rl.request_id, rl.session_id, rl.user_id,
+                      u.email, g.name AS group_name,
+                      rl.request_body, rl.response_body, rl.created_at
                FROM request_logs rl
-               LEFT JOIN users u ON u.id = rl.user_id
+               LEFT JOIN users u  ON u.id = rl.user_id
+               LEFT JOIN ul       ON ul.request_id = rl.request_id
+               LEFT JOIN groups g ON g.id = ul.group_id
                WHERE rl.created_at >= $1 AND rl.created_at < $2
                ORDER BY rl.created_at""",
             hour_start,

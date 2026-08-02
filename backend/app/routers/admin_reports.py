@@ -116,7 +116,7 @@ async def get_trend(
             COALESCE(SUM(cache_creation_tokens), 0)  AS cache_creation_tokens,
             COALESCE(SUM(cache_read_tokens), 0)      AS cache_read_tokens,
             COUNT(*)                                 AS requests,
-            ROUND(SUM(actual_cost)::numeric, 4)      AS actual_cost
+            ROUND(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1.0))::numeric, 4) AS actual_cost
         FROM usage_logs
         WHERE created_at >= $1::date AT TIME ZONE $3
           AND created_at < ($2::date + interval '1 day') AT TIME ZONE $3
@@ -181,7 +181,7 @@ async def get_accounts(
                 a.expires_at,
                 ul.model,
                 COUNT(ul.id)                                                AS requests,
-                COALESCE(SUM(ul.actual_cost), 0)                            AS total_cost,
+                COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1.0)), 0) AS total_cost,
                 COALESCE(SUM(ul.input_tokens), 0)                          AS input_tokens,
                 COALESCE(SUM(ul.output_tokens), 0)                         AS output_tokens,
                 COALESCE(SUM(ul.cache_creation_tokens), 0)                 AS cache_creation_tokens,
@@ -199,7 +199,7 @@ async def get_accounts(
                 ), 0)::numeric                                                           AS otps_sum,
                 COUNT(*) FILTER (WHERE ul.duration_ms > 0)                               AS otps_count,
                 CASE WHEN COUNT(ul.id) > 0
-                    THEN ROUND(SUM(ul.actual_cost)::numeric / COUNT(ul.id), 8)
+                    THEN ROUND(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1.0))::numeric / COUNT(ul.id), 8)
                     ELSE NULL END AS cost_avg
             FROM usage_logs ul
             LEFT JOIN accounts a ON a.id = ul.account_id
@@ -378,7 +378,7 @@ async def get_account_groups(
                 ), 0)::numeric                                                           AS otps_sum,
                 COUNT(*) FILTER (WHERE ul.duration_ms > 0)                               AS otps_count,
                 CASE WHEN COUNT(ul.id) > 0
-                    THEN ROUND(SUM(ul.actual_cost)::numeric / COUNT(ul.id), 8)
+                    THEN ROUND(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1.0))::numeric / COUNT(ul.id), 8)
                     ELSE NULL END AS cost_avg,
                 COUNT(DISTINCT ul.account_id)                             AS account_count
             FROM usage_logs ul
@@ -496,7 +496,7 @@ async def get_account_latency(
                 COALESCE(ul.cache_read_tokens, 0)                       AS cache_read_tokens,
                 COALESCE(ul.input_tokens, 0)                            AS input_tokens,
                 COALESCE(ul.cache_creation_tokens, 0)                   AS cache_creation_tokens,
-                ul.actual_cost                                          AS account_cost,
+                COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1.0) AS account_cost,
                 ROW_NUMBER() OVER (PARTITION BY ul.account_id ORDER BY ul.created_at DESC) AS rn
             FROM usage_logs ul
             INNER JOIN accounts a ON a.id = ul.account_id AND a.deleted_at IS NULL
@@ -524,7 +524,7 @@ async def get_account_latency(
                 SUM(COALESCE(ul.cache_read_tokens, 0))                                            AS recent_cache_read,
                 SUM(COALESCE(ul.input_tokens, 0))                                                 AS recent_input,
                 SUM(COALESCE(ul.cache_creation_tokens, 0))                                        AS recent_cache_creation,
-                ROUND(AVG(ul.actual_cost)::numeric, 8)                                            AS recent_cost_avg
+                ROUND(AVG(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1.0))::numeric, 8) AS recent_cost_avg
             FROM usage_logs ul
             WHERE ul.created_at >= NOW() - ($2 || ' minutes')::interval
               AND ul.duration_ms IS NOT NULL AND ul.duration_ms > 0

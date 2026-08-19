@@ -360,7 +360,7 @@ async def get_account_groups(
                 ul.group_id,
                 ul.model,
                 COUNT(ul.id)                                               AS requests,
-                COALESCE(SUM(ul.actual_cost), 0)                            AS total_cost,
+                COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1.0)), 0) AS total_cost,
                 COALESCE(SUM(ul.input_tokens), 0)                          AS input_tokens,
                 COALESCE(SUM(ul.output_tokens), 0)                         AS output_tokens,
                 COALESCE(SUM(ul.cache_creation_tokens), 0)                 AS cache_creation_tokens,

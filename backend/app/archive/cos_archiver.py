@@ -207,8 +207,8 @@ async def _export_hour_parts(
             """WITH ul AS (
                    SELECT DISTINCT ON (request_id) request_id, group_id
                    FROM usage_logs
-                   WHERE created_at >= $1 - interval '30 min'
-                     AND created_at <  $2 + interval '30 min'
+                   WHERE created_at >= $1::timestamptz - interval '30 min'
+                     AND created_at <  $2::timestamptz + interval '30 min'
                      AND request_id IS NOT NULL
                    ORDER BY request_id, created_at
                )

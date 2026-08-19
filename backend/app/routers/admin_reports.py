@@ -29,7 +29,7 @@ async def _admin_get(client: httpx.AsyncClient, settings, path: str, params: dic
 async def _admin_get_simple(path: str, params: dict | None = None) -> Any:
     settings = get_settings()
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             response = await client.get(
                 f"{settings.sub2api_base_url.rstrip('/')}/{path.lstrip('/')}",
                 headers={"x-api-key": settings.sub2api_admin_api_key},
@@ -45,7 +45,7 @@ async def _admin_get_raw(path: str, params: dict | None = None) -> Any:
     """返回原始 JSON（不提取 .data），适用于直接返回数组的接口。"""
     settings = get_settings()
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             response = await client.get(
                 f"{settings.sub2api_base_url.rstrip('/')}/{path.lstrip('/')}",
                 headers={"x-api-key": settings.sub2api_admin_api_key},

@@ -2,7 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 import ImageStudio from '../pages/ImageStudio.vue'
 import AdminReports from '../pages/AdminReports.vue'
 import AdminReportsFull from '../pages/AdminReportsFull.vue'
-import ChannelStatus from '../pages/ChannelStatus.vue'
 import UserTrend from '../pages/UserTrend.vue'
 import AccountLatency from '../pages/AccountLatency.vue'
 import AccountMonitorChart from '../pages/AccountMonitorChart.vue'
@@ -81,10 +80,6 @@ const router = createRouter({
       meta: { requiresAdmin: true },
     },
     {
-      path: '/admin/channel-status',
-      component: ChannelStatus,
-      meta: { requiresAdmin: true },
-    },
     {
       path: '/admin/user-trend',
       component: UserTrend,

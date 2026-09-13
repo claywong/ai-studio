@@ -773,14 +773,6 @@ async def get_accounts_list(
     ]
 
 
-@router.get("/accounts/{account_id}/health-stats")
-async def get_account_health_stats(
-    account_id: int,
-    _: Annotated[dict, Depends(require_admin_or_reporter)],
-):
-    return await _admin_get_simple(f"/admin/accounts/{account_id}/health-stats")
-
-
 @router.get("/scheduler-quality")
 async def get_scheduler_quality(
     _: Annotated[dict, Depends(require_admin_or_reporter)],

@@ -6,7 +6,6 @@ import UserTrend from '../pages/UserTrend.vue'
 import AccountLatency from '../pages/AccountLatency.vue'
 import AccountMonitorChart from '../pages/AccountMonitorChart.vue'
 import AccountUsageTimeline from '../pages/AccountUsageTimeline.vue'
-import AccountHealthStatus from '../pages/AccountHealthStatus.vue'
 import SchedulerPreview from '../pages/SchedulerPreview.vue'
 import UsageLogs from '../pages/UsageLogs.vue'
 
@@ -101,10 +100,6 @@ const router = createRouter({
       meta: { requiresAdmin: true },
     },
     {
-      path: '/admin/account-health',
-      component: AccountHealthStatus,
-      meta: { requiresAdmin: true },
-    },
     {
       path: '/admin/scheduler-preview',
       component: SchedulerPreview,

@@ -78,7 +78,6 @@ const router = createRouter({
       meta: { requiresAdmin: true },
     },
     {
-    {
       path: '/admin/user-trend',
       component: UserTrend,
       meta: { requiresAdmin: true },
@@ -98,8 +97,6 @@ const router = createRouter({
       component: AccountUsageTimeline,
       meta: { requiresAdmin: true },
     },
-    {
-    {
     {
       path: '/admin/usage-logs',
       component: UsageLogs,

@@ -13,7 +13,7 @@ const aspectRatios = [
 ]
 
 const sizeLabels = ['1K', '2K']
-const models = ['gpt-image-2']
+const models = ['gpt-image-2', 'gpt-image-2.5']
 const HISTORY_STORAGE_KEY = 'g7e6_ai_studio_image_history'
 const HISTORY_DB_NAME = 'g7e6_ai_studio'
 const HISTORY_DB_STORE = 'image_history'

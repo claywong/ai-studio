@@ -29,7 +29,7 @@ _SYSTEM_PROMPT = """\
 
    支持的模型列表：
    - Claude（Anthropic）：claude-haiku-4-5-20251001、claude-opus-4-6、claude-opus-4-7、claude-sonnet-4-6
-   - GPT（OpenAI）：gpt-5.5、gpt-5.4、gpt-5.3-codex、gpt-5.4-mini、gpt-image-2
+   - GPT（OpenAI）：gpt-5.5、gpt-5.4、gpt-5.3-codex、gpt-5.4-mini、gpt-image-2、gpt-image-2.5
    - KIMI（moonshot）：Kimi-K2.6、Kimi-K2.5
    - 智谱（BigModel）：GLM-5.1、GLM-4.7、GLM-5-Turbo
    - DeepSeek：deepseek-v4-pro、deepseek-v4-flash、DeepSeek-V3.2

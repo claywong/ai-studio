@@ -433,11 +433,66 @@ async def archive_hour(
 
 
 async def _already_deleted(conn: asyncpg.Connection, hour_start: datetime) -> bool:
-    status = await conn.fetchval(
+    return await _run_status(conn, hour_start) == "deleted"
+
+
+async def _run_status(conn: asyncpg.Connection, hour_start: datetime) -> str | None:
+    """读某小时的水位状态；无记录返回 None。"""
+    return await conn.fetchval(
         "SELECT status FROM request_logs_archive_runs WHERE hour_start = $1",
         hour_start,
     )
-    return status == "deleted"
+
+
+async def _mark_deleted_keep_audit(
+    conn: asyncpg.Connection, hour_start: datetime
+) -> None:
+    """把状态推进到 deleted，保留 row_count/byte_count/object_keys 审计字段。
+
+    用于"此前已上传、本次只删库"的路径：对象已在 COS，不该把 object_keys 清空。
+    """
+    await conn.execute(
+        """UPDATE request_logs_archive_runs
+           SET status = 'deleted', error = NULL, updated_at = now()
+           WHERE hour_start = $1""",
+        hour_start,
+    )
+
+
+async def _settle_uploaded_hour(
+    conn: asyncpg.Connection,
+    hour_start: datetime,
+    *,
+    delete_cutoff: datetime,
+    delete_batch_size: int,
+    allow_delete: bool,
+) -> HourResult:
+    """处理"水位already=uploaded"的小时：只补删库，不重新导出上传。
+
+    删除失败时保持 uploaded（不落 error），这样下次回扫仍会重试删除，
+    且不会丢掉已上传对象的 object_keys。
+    """
+    result = HourResult(hour_start=hour_start, skipped=True)
+    if not allow_delete:
+        result.reason = "已上传，按参数跳过删除"
+        return result
+    if hour_start + timedelta(hours=1) > delete_cutoff:
+        result.reason = f"已上传，未过保留期（cutoff={delete_cutoff:%Y-%m-%d %H:%M}Z）"
+        return result
+
+    try:
+        deleted = await _delete_hour(conn, hour_start, delete_batch_size)
+    except Exception as exc:  # noqa: BLE001 — 保持 uploaded，下次回扫重试
+        logger.exception("删除 %s 失败（保持 uploaded 待重试）", hour_start.isoformat())
+        result.skipped = False
+        result.reason = f"删除失败，保持 uploaded 待重试: {exc}"
+        return result
+
+    result.skipped = False
+    result.deleted_rows = deleted
+    await _mark_deleted_keep_audit(conn, hour_start)
+    result.reason = "此前已上传，本次补删库"
+    return result
 
 
 async def summarize_runs(
@@ -506,11 +561,34 @@ async def archive_range(
         if not dry_run:
             await ensure_watermark_table(conn)
         for hour_start in iter_hours(start, end):
-            if not dry_run and await _already_deleted(conn, hour_start):
-                r = HourResult(hour_start=hour_start, skipped=True, reason="已归档删除，跳过")
-                results.append(r)
-                logger.info("跳过 %s：已归档删除", hour_start.isoformat())
-                continue
+            if not dry_run:
+                status = await _run_status(conn, hour_start)
+                if status == "deleted":
+                    r = HourResult(
+                        hour_start=hour_start, skipped=True, reason="已归档删除，跳过"
+                    )
+                    results.append(r)
+                    logger.info("跳过 %s：已归档删除", hour_start.isoformat())
+                    continue
+                # 此前已上传：对象已在 COS 且校验过，不重复导出上传。
+                # 只在过了保留期时补删库，否则直接跳过。这让回扫窗口可以放宽到
+                # 保留期之外而不产生重复流量。
+                if status == "uploaded":
+                    r = await _settle_uploaded_hour(
+                        conn,
+                        hour_start,
+                        delete_cutoff=delete_cutoff,
+                        delete_batch_size=delete_batch_size,
+                        allow_delete=allow_delete,
+                    )
+                    results.append(r)
+                    logger.info(
+                        "小时 %s：删除=%d %s",
+                        hour_start.isoformat(),
+                        r.deleted_rows,
+                        r.reason,
+                    )
+                    continue
             try:
                 r = await archive_hour(
                     conn,

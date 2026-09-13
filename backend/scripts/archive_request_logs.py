@@ -84,6 +84,12 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--hour", type=_parse_hour, help="只归档这一个整点小时（UTC）")
     pr.add_argument("--from", dest="start", type=_parse_hour, help="区间起（UTC，含）")
     pr.add_argument("--to", dest="end", type=_parse_hour, help="区间止（UTC，不含）")
+    pr.add_argument(
+        "--lookback-hours",
+        type=int,
+        default=None,
+        help="不指定区间时回扫最近 N 小时（默认 保留期+24h，确保覆盖到已过期的小时）",
+    )
     pr.add_argument("--dry-run", action="store_true", help="只导出到本地临时目录，不上传不删除")
     pr.add_argument("--no-delete", action="store_true", help="上传但不删库")
     pr.add_argument("-v", "--verbose", action="store_true", help="DEBUG 日志")
@@ -98,16 +104,20 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _resolve_range(args: argparse.Namespace) -> tuple[datetime, datetime]:
+def _resolve_range(
+    args: argparse.Namespace, lookback_hours: int = 1
+) -> tuple[datetime, datetime]:
     if getattr(args, "hour", None):
         return args.hour, args.hour + timedelta(hours=1)
     if args.start and args.end:
         return args.start, args.end
     if args.start or args.end:
         raise SystemExit("--from 与 --to 需同时提供")
-    # 默认：上一个完整小时
-    prev = aligned_hour(datetime.now(UTC)) - timedelta(hours=1)
-    return prev, prev + timedelta(hours=1)
+    # 默认：回扫 [now-lookback, now)。窗口必须盖过保留期，否则"已上传"的小时
+    # 永远等不到自己过期的那一刻，删除分支不会被触发（历史上就是这么积压的）。
+    # 窗口内已上传且未过期的小时会被直接跳过，不产生重复上传流量。
+    end = aligned_hour(datetime.now(UTC))
+    return end - timedelta(hours=max(1, lookback_hours)), end
 
 
 def _make_uploader(settings, *, required: bool) -> CosUploader | None:
@@ -130,7 +140,11 @@ def _make_uploader(settings, *, required: bool) -> CosUploader | None:
 
 async def _run(args: argparse.Namespace) -> int:
     settings = get_settings()
-    start, end = _resolve_range(args)
+    # 默认回扫窗口 = 保留期 + 24h：保证每次运行都能看到刚过保留期的小时并删库。
+    lookback = args.lookback_hours
+    if lookback is None:
+        lookback = settings.archive_retention_hours + 24
+    start, end = _resolve_range(args, lookback)
 
     uploader: CosUploader | None = None
     if not args.dry_run:
@@ -241,6 +255,7 @@ def main() -> None:
         raise SystemExit(asyncio.run(_list(args)))
     # cmd 为 "run" 或 None（无子命令）：补齐 run 所需默认值
     for attr, default in (("hour", None), ("start", None), ("end", None),
+                          ("lookback_hours", None),
                           ("dry_run", False), ("no_delete", False)):
         if not hasattr(args, attr):
             setattr(args, attr, default)

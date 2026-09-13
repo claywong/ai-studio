@@ -116,6 +116,13 @@ class FakeConn:
                 "byte_count": byte_count, "object_keys": keys, "error": error,
             }
             return "INSERT 0 1"
+        if s.startswith("UPDATE REQUEST_LOGS_ARCHIVE_RUNS"):
+            (hour_start,) = args
+            row = self.watermark.get(hour_start)
+            if row is not None:
+                row["status"] = "deleted"
+                row["error"] = None
+            return "UPDATE 1"
         if s.startswith("DELETE FROM REQUEST_LOGS"):
             hour_start, hour_end, limit = args
             rows = self.rows_by_hour.get(hour_start, [])
@@ -321,6 +328,61 @@ async def test_idempotent_skips_already_deleted(tmp_path, monkeypatch):
     )
     assert res[0].skipped is True
     assert up.put_calls == []  # 不再上传
+
+
+@pytest.mark.asyncio
+async def test_uploaded_past_retention_deletes_without_reupload(tmp_path, monkeypatch):
+    """回扫窗口里遇到"已上传且已过保留期"：只删库，不重新导出上传。"""
+    monkeypatch.setattr(m.tempfile, "TemporaryDirectory",
+                        lambda *a, **k: _TmpDir(tmp_path))
+    conn = FakeConn({H8: [_row(f"r{i}", H8, minute=i) for i in range(3)]})
+    keys = ["request-logs/2026/06/16/08/part-0001.jsonl.gz"]
+    conn.watermark[H8] = {
+        "status": "uploaded", "row_count": 3, "byte_count": 999,
+        "object_keys": keys, "error": None,
+    }
+    monkeypatch.setattr(m.asyncpg, "connect", _connect_returning(conn))
+    up = FakeUploader()
+    res = await m.archive_range(
+        "fake://db", up, H8, H9,
+        prefix="request-logs", max_rows_per_part=50000,
+        retention_hours=48, delete_batch_size=1000,
+        now=NOW_LATE,
+    )
+    r = res[0]
+    assert r.deleted_rows == 3
+    assert conn.rows_by_hour[H8] == []
+    assert up.put_calls == []  # 关键：没有重复上传
+    wm = conn.watermark[H8]
+    assert wm["status"] == "deleted"
+    assert wm["object_keys"] == keys  # 审计字段保留
+    assert wm["byte_count"] == 999
+
+
+@pytest.mark.asyncio
+async def test_uploaded_within_retention_skipped_no_reupload(tmp_path, monkeypatch):
+    """已上传但还在保留期内：整跳过，既不上传也不删。"""
+    monkeypatch.setattr(m.tempfile, "TemporaryDirectory",
+                        lambda *a, **k: _TmpDir(tmp_path))
+    conn = FakeConn({H8: [_row(f"r{i}", H8, minute=i) for i in range(3)]})
+    conn.watermark[H8] = {
+        "status": "uploaded", "row_count": 3, "byte_count": 999,
+        "object_keys": ["k"], "error": None,
+    }
+    monkeypatch.setattr(m.asyncpg, "connect", _connect_returning(conn))
+    up = FakeUploader()
+    res = await m.archive_range(
+        "fake://db", up, H8, H9,
+        prefix="request-logs", max_rows_per_part=50000,
+        retention_hours=48, delete_batch_size=1000,
+        now=H9 + timedelta(hours=1),
+    )
+    r = res[0]
+    assert r.skipped is True
+    assert r.deleted_rows == 0
+    assert len(conn.rows_by_hour[H8]) == 3
+    assert up.put_calls == []
+    assert conn.watermark[H8]["status"] == "uploaded"
 
 
 @pytest.mark.asyncio
